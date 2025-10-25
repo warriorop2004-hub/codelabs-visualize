@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { Navbar } from "@/components/Navbar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -7,57 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Search, Layers, GitBranch, Network, Cpu, Play } from "lucide-react";
-
-const experiments = [
-  {
-    id: "bst",
-    name: "Binary Search Tree Visualizer",
-    description: "Interactive visualization of BST operations including insert, delete, and search",
-    category: "data-structures",
-    difficulty: "intermediate",
-    icon: GitBranch,
-  },
-  {
-    id: "sorting",
-    name: "Sorting Algorithms",
-    description: "Compare and visualize bubble sort, merge sort, quick sort, and more",
-    category: "algorithms",
-    difficulty: "beginner",
-    icon: Layers,
-  },
-  {
-    id: "dijkstra",
-    name: "Dijkstra's Algorithm",
-    description: "Pathfinding visualization with weighted graphs and shortest path calculation",
-    category: "algorithms",
-    difficulty: "advanced",
-    icon: Network,
-  },
-  {
-    id: "cpu-scheduling",
-    name: "CPU Scheduling",
-    description: "Simulate FCFS, Round Robin, and other scheduling algorithms",
-    category: "operating-systems",
-    difficulty: "intermediate",
-    icon: Cpu,
-  },
-  {
-    id: "hash-tables",
-    name: "Hash Table Operations",
-    description: "Visualize hashing, collision resolution, and load factor effects",
-    category: "data-structures",
-    difficulty: "intermediate",
-    icon: Layers,
-  },
-  {
-    id: "tcp-handshake",
-    name: "TCP Three-Way Handshake",
-    description: "Interactive simulation of TCP connection establishment",
-    category: "networks",
-    difficulty: "beginner",
-    icon: Network,
-  },
-];
+import { experimentApi } from "@/lib/api";
+import { Experiment } from "@/types";
 
 const categories = [
   { id: "all", name: "All Experiments" },
@@ -68,12 +19,29 @@ const categories = [
 ];
 
 const Library = () => {
+  const [experiments, setExperiments] = useState<Experiment[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
 
+  useEffect(() => {
+    const fetchExperiments = async () => {
+      try {
+        const { data } = await experimentApi.getAll();
+        setExperiments(data);
+      } catch (error) {
+        console.error("Error fetching experiments:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchExperiments();
+  }, []);
+
   const filteredExperiments = experiments.filter((exp) => {
-    const matchesSearch = exp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      exp.description.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch = exp?.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      exp?.description?.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesCategory = selectedCategory === "all" || exp.category === selectedCategory;
     return matchesSearch && matchesCategory;
   });
@@ -89,6 +57,17 @@ const Library = () => {
       default:
         return "bg-muted text-muted-foreground";
     }
+  };
+
+  const getIcon = (iconName: string) => {
+    const icons = {
+      GitBranch,
+      Layers,
+      Network,
+      Cpu,
+      Play
+    };
+    return icons[iconName as keyof typeof icons] || Layers;
   };
 
   return (
@@ -128,7 +107,7 @@ const Library = () => {
         {/* Experiments Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredExperiments.map((experiment, index) => {
-            const Icon = experiment.icon;
+            const Icon = getIcon(experiment.icon);
             return (
               <Card
                 key={experiment.id}
@@ -144,12 +123,12 @@ const Library = () => {
                       {experiment.difficulty}
                     </Badge>
                   </div>
-                  <CardTitle className="text-lg">{experiment.name}</CardTitle>
+                  <CardTitle className="text-lg">{experiment.title}</CardTitle>
                   <CardDescription className="line-clamp-2">{experiment.description}</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <Button variant="hero" className="w-full group-hover:shadow-md" asChild>
-                    <Link to={`/experiment/${experiment.id}`}>
+                    <Link to={`/experiment/${experiment.slug}`}>
                       <Play className="h-4 w-4" />
                       Launch Experiment
                     </Link>

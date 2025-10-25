@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { Navbar } from "@/components/Navbar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -6,94 +6,60 @@ import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { BookOpen, Play, CheckCircle2, Clock, Users, BarChart3 } from "lucide-react";
-
-const studentCourses = [
-  {
-    id: 1,
-    code: "CS201",
-    name: "Data Structures",
-    progress: 75,
-    labs: 8,
-    completed: 6,
-  },
-  {
-    id: 2,
-    code: "CS301",
-    name: "Algorithms",
-    progress: 45,
-    labs: 10,
-    completed: 4,
-  },
-  {
-    id: 3,
-    code: "CS305",
-    name: "Operating Systems",
-    progress: 30,
-    labs: 6,
-    completed: 2,
-  },
-];
-
-const instructorCourses = [
-  {
-    id: 1,
-    code: "CS201",
-    name: "Data Structures",
-    students: 42,
-    submissions: 36,
-    avgCompletion: 78,
-  },
-  {
-    id: 2,
-    code: "CS301",
-    name: "Algorithms",
-    students: 38,
-    submissions: 32,
-    avgCompletion: 65,
-  },
-];
-
-const recentLabs = [
-  {
-    id: 1,
-    name: "Binary Search Trees",
-    course: "CS201",
-    dueDate: "Due Tomorrow",
-    status: "in-progress",
-  },
-  {
-    id: 2,
-    name: "Graph Traversal",
-    course: "CS301",
-    dueDate: "Due in 3 days",
-    status: "not-started",
-  },
-];
+import { courseApi, userApi } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
+import { Course, RecentLab } from "@/types";
 
 const Dashboard = () => {
-  const [userType, setUserType] = useState<"student" | "instructor">("student");
+  const { profile } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [studentCourses, setStudentCourses] = useState<Course[]>([]);
+  const [instructorCourses, setInstructorCourses] = useState<Course[]>([]);
+  const [recentLabs, setRecentLabs] = useState<RecentLab[]>([]);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        if (profile?.role === "student") {
+          const [coursesRes, progressRes] = await Promise.all([
+            courseApi.getEnrolled(),
+            userApi.getProgress(),
+          ]);
+
+          setStudentCourses(coursesRes.data);
+          setRecentLabs(progressRes.data.recentLabs || []);
+        } else if (profile?.role === "instructor") {
+          const coursesRes = await courseApi.getCourseByInstructor(profile.id);
+          setInstructorCourses(coursesRes.data);
+        }
+      } catch (error) {
+        console.error("Error fetching dashboard data:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [profile]);
+
+  if (!profile) return null;
 
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      
       <div className="container mx-auto px-4 py-8">
         <div className="mb-8 animate-fade-in-up">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h1 className="text-4xl font-bold mb-2">Welcome back, Ananya! 👋</h1>
-              <p className="text-muted-foreground">Continue your learning journey</p>
-            </div>
-            <Tabs value={userType} onValueChange={(v) => setUserType(v as "student" | "instructor")}>
-              <TabsList>
-                <TabsTrigger value="student">Student View</TabsTrigger>
-                <TabsTrigger value="instructor">Instructor View</TabsTrigger>
-              </TabsList>
-            </Tabs>
-          </div>
+          <h1 className="text-4xl font-bold mb-2">
+            Welcome back, {profile.full_name}! 👋
+          </h1>
+          <p className="text-muted-foreground">
+            {profile.role === "student"
+              ? "Continue your learning journey"
+              : "Manage your courses and students"}
+          </p>
         </div>
 
-        {userType === "student" ? (
+        {profile.role === "student" ? (
           <div className="space-y-8">
             {/* Quick Stats */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 animate-fade-in">
@@ -284,9 +250,11 @@ const Dashboard = () => {
                         </div>
                       </div>
                       <div className="flex gap-2">
-                        <Button variant="outline" size="sm">View Submissions</Button>
+                        <Button variant="outline" size="sm" asChild>
+                          <Link to={`/course/${course.id}`}>View Course</Link>
+                        </Button>
                         <Button variant="ghost" size="sm" asChild>
-                          <Link to={`/course/${course.id}`}>Manage</Link>
+                          <Link to={`/course/${course.id}/settings`}>Settings</Link>
                         </Button>
                       </div>
                     </div>

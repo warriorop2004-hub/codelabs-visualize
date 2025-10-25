@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect, forwardRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,13 +14,18 @@ interface TreeNode {
   y?: number;
 }
 
-export const BSTVisualizer = () => {
+export const BSTVisualizer = forwardRef<SVGSVGElement>((props,ref) => {
   const [tree, setTree] = useState<TreeNode | null>(null);
   const [inputValue, setInputValue] = useState("");
   const [animationSpeed, setAnimationSpeed] = useState([50]);
   const [searchValue, setSearchValue] = useState("");
+  const [deleteValue, setDeleteValue] = useState("");
   const [highlightedNodes, setHighlightedNodes] = useState<Set<number>>(new Set());
   const [log, setLog] = useState<string[]>([]);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
   const addLog = (message: string) => {
     setLog((prev) => [...prev, message]);
@@ -95,6 +100,110 @@ export const BSTVisualizer = () => {
     }, 2000);
   };
 
+  const findMin = (node: TreeNode): TreeNode => {
+    let current = node;
+    while (current.left !== null) {
+      current = current.left;
+    }
+    return current;
+  };
+
+  const deleteNode = (node: TreeNode | null, value: number): TreeNode | null => {
+    if (node === null) {
+      addLog(`❌ Node ${value} not found for deletion`);
+      return null;
+    }
+
+    if (value < node.value) {
+      addLog(`Comparing ${value} < ${node.value}, going left`);
+      node.left = deleteNode(node.left, value);
+    } else if (value > node.value) {
+      addLog(`Comparing ${value} > ${node.value}, going right`);
+      node.right = deleteNode(node.right, value);
+    } else {
+      // Node to delete found
+      addLog(`Found node ${value} to delete`);
+      
+      // Case 1: Leaf node
+      if (node.left === null && node.right === null) {
+        addLog(`Deleting leaf node ${value}`);
+        return null;
+      }
+      
+      // Case 2: Node with one child
+      if (node.left === null) {
+        addLog(`Replacing node ${value} with right child`);
+        return node.right;
+      }
+      if (node.right === null) {
+        addLog(`Replacing node ${value} with left child`);
+        return node.left;
+      }
+      
+      // Case 3: Node with two children
+      const successor = findMin(node.right);
+      addLog(`Found successor ${successor.value} for node ${value}`);
+      node.value = successor.value;
+      node.right = deleteNode(node.right, successor.value);
+    }
+
+    return node;
+  };
+
+  const handleDelete = () => {
+    const value = parseInt(deleteValue);
+    if (isNaN(value)) {
+      toast.error("Please enter a valid number");
+      return;
+    }
+
+    setTree((prevTree) => {
+      const newTree = deleteNode(prevTree, value);
+      if (newTree !== prevTree) {
+        toast.success(`Deleted ${value}`);
+      } else {
+        toast.error(`Could not find node ${value}`);
+      }
+      return newTree;
+    });
+    setDeleteValue("");
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setIsDragging(true);
+    setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (isDragging) {
+      setPan({
+        x: e.clientX - dragStart.x,
+        y: e.clientY - dragStart.y,
+      });
+    }
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  const handleWheel = (e: React.WheelEvent) => {
+    // Prevent browser zoom if Ctrl key is pressed
+    if (e.ctrlKey) {
+      e.preventDefault();
+    }
+    
+    // Always prevent default to stop page scrolling
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Only handle zoom when Ctrl is not pressed (to avoid conflicts with browser zoom)
+    if (!e.ctrlKey) {
+      const scaleFactor = e.deltaY > 0 ? 0.9 : 1.1;
+      setZoom(prevZoom => Math.min(Math.max(prevZoom * scaleFactor, 0.1), 2));
+    }
+  };
+
   const calculateNodePositions = (
     node: TreeNode | null,
     x: number,
@@ -113,7 +222,15 @@ export const BSTVisualizer = () => {
   const renderTree = () => {
     if (!tree) return null;
 
-    const positionedTree = calculateNodePositions(tree, 400, 50, 150);
+    const getTreeDepth = (node: TreeNode | null): number => {
+      if (!node) return 0;
+      return 1 + Math.max(getTreeDepth(node.left), getTreeDepth(node.right));
+    };
+
+    const depth = getTreeDepth(tree);
+    const baseSpacing = Math.max(150, 800 / depth); // Adjust spacing based on depth
+    const positionedTree = calculateNodePositions(tree, 0, 50, baseSpacing);
+
     const nodes: JSX.Element[] = [];
     const edges: JSX.Element[] = [];
 
@@ -188,9 +305,26 @@ export const BSTVisualizer = () => {
     traverse(positionedTree);
 
     return (
-      <svg width="100%" height="500" className="bg-card rounded-lg border shadow-sm">
-        {edges}
-        {nodes}
+      <svg
+        ref={ref}
+        width="100%"
+        height="500"
+        className="bg-card rounded-lg border shadow-sm cursor-move touch-none"
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseUp}
+        onWheel={handleWheel}
+        style={{ 
+          touchAction: 'none',
+          userSelect: 'none',
+          WebkitUserSelect: 'none'
+        }}
+      >
+        <g transform={`translate(${pan.x + 400}, ${pan.y + 50}) scale(${zoom})`}>
+          {edges}
+          {nodes}
+        </g>
       </svg>
     );
   };
@@ -228,7 +362,7 @@ export const BSTVisualizer = () => {
           <CardTitle className="text-lg">Controls</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-3 gap-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">Insert Node</label>
               <div className="flex gap-2">
@@ -241,6 +375,22 @@ export const BSTVisualizer = () => {
                 />
                 <Button variant="hero" onClick={handleInsert}>
                   <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Delete Node</label>
+              <div className="flex gap-2">
+                <Input
+                  type="number"
+                  placeholder="Delete value"
+                  value={deleteValue}
+                  onChange={(e) => setDeleteValue(e.target.value)}
+                  onKeyPress={(e) => e.key === "Enter" && handleDelete()}
+                />
+                <Button variant="destructive" onClick={handleDelete}>
+                  <Trash2 className="h-4 w-4" />
                 </Button>
               </div>
             </div>
@@ -289,11 +439,11 @@ export const BSTVisualizer = () => {
                 <div key={index} className="text-foreground/80">
                   {entry}
                 </div>
-              ))
-            )}
+              )))
+            }
           </div>
         </CardContent>
       </Card>
     </div>
   );
-};
+});

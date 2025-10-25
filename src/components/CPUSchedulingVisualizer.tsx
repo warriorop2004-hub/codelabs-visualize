@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, forwardRef, useImperativeHandle, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -27,13 +27,34 @@ type Algorithm = "fcfs" | "sjf" | "rr";
 
 type TimelineEntry = { process: string; time: number; color: string };
 
-export const CPUSchedulingVisualizer = () => {
+export interface CPUSchedulingState {
+  processes: Process[];
+  timeline: TimelineEntry[];
+  algorithm: Algorithm;
+  currentTime: number;
+  isRunning: boolean;
+  // computed metrics
+  avgWaitingTime: number | null;
+  avgTurnaroundTime: number | null;
+  throughput: number | null; // processes per unit time
+  cpuUtilization: number | null; // 0..1
+  totalTime: number;
+  // helpers to obtain serializable DOM info on demand (do NOT include DOM nodes directly)
+  getTimelineRect?: () => { x: number; y: number; width: number; height: number; top: number; left: number; right: number; bottom: number } | null;
+  getTimelineHTML?: () => string | null;
+  // control helpers
+  startScheduling: () => Promise<void>;
+  reset: () => void;
+}
+
+export const CPUSchedulingVisualizer = forwardRef<CPUSchedulingState>((props, ref) => {
   const [processes, setProcesses] = useState<Process[]>(defaultProcesses);
   const [algorithm, setAlgorithm] = useState<Algorithm>("fcfs");
   const [timeline, setTimeline] = useState<TimelineEntry[]>([]);
   const [currentTime, setCurrentTime] = useState(0);
   const [isRunning, setIsRunning] = useState(false);
   const [log, setLog] = useState<string[]>([]);
+  const timelineRef = useRef<HTMLDivElement | null>(null);
 
   const addLog = (message: string) => {
     setLog((prev) => [...prev, message]);
@@ -183,6 +204,85 @@ export const CPUSchedulingVisualizer = () => {
     setIsRunning(false);
   };
 
+  // compute lightweight metrics from `processes` and `timeline`
+  const computeMetricsForExport = () => {
+    if (timeline.length === 0) {
+      return {
+        avgWaitingTime: null,
+        avgTurnaroundTime: null,
+        throughput: null,
+        cpuUtilization: null,
+        totalTime: 0,
+      };
+    }
+
+    // total time equals currentTime (end time)
+    const totalTime = currentTime;
+
+    // compute waiting/turnaround for each process based on timeline counts
+    const stats = processes.map((p) => {
+      const executedCount = timeline.filter((t) => t.process === p.name).length;
+      const completionTime = Math.max(...timeline.filter((t) => t.process === p.name).map(t => t.time), p.arrivalTime) + 1;
+      const turnaround = completionTime - p.arrivalTime;
+      const waiting = turnaround - p.burstTime;
+      return { waiting, turnaround };
+    });
+
+    const avgWaitingTime = stats.reduce((s, x) => s + x.waiting, 0) / stats.length;
+    const avgTurnaroundTime = stats.reduce((s, x) => s + x.turnaround, 0) / stats.length;
+    const throughput = totalTime > 0 ? processes.length / totalTime : null;
+    // CPU busy time equals timeline length (each unit represents CPU busy)
+    const cpuUtilization = totalTime > 0 ? (timeline.length / totalTime) : null;
+
+    return { avgWaitingTime, avgTurnaroundTime, throughput, cpuUtilization, totalTime };
+  };
+
+  // helper that returns a plain serializable rect object (or null)
+  const getTimelineRect = () => {
+    const el = timelineRef.current;
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return {
+      x: r.x,
+      y: r.y,
+      width: r.width,
+      height: r.height,
+      top: r.top,
+      left: r.left,
+      right: r.right,
+      bottom: r.bottom,
+    };
+  };
+
+  // helper that returns serializable HTML snapshot (string) or null
+  const getTimelineHTML = () => {
+    const el = timelineRef.current;
+    if (!el) return null;
+    return el.innerHTML;
+  };
+
+  // expose state and control methods via ref — note we return helpers (functions) instead of DOM nodes
+  useImperativeHandle(ref, () => {
+    const metrics = computeMetricsForExport();
+    return {
+      processes,
+      timeline,
+      algorithm,
+      currentTime,
+      isRunning,
+      avgWaitingTime: metrics.avgWaitingTime,
+      avgTurnaroundTime: metrics.avgTurnaroundTime,
+      throughput: metrics.throughput,
+      cpuUtilization: metrics.cpuUtilization,
+      totalTime: metrics.totalTime,
+      // expose only helpers that produce serializable outputs on demand
+      getTimelineRect,
+      getTimelineHTML,
+      startScheduling,
+      reset,
+    } as CPUSchedulingState;
+  }, [processes, timeline, algorithm, currentTime, isRunning]);
+
   return (
     <div className="space-y-6">
       <Card className="shadow-md">
@@ -199,35 +299,53 @@ export const CPUSchedulingVisualizer = () => {
           <div className="space-y-4">
             {/* Timeline */}
             <div className="bg-muted/20 rounded-lg p-4 min-h-[150px]">
-              <div className="flex items-center gap-1 mb-2">
-                {timeline.map((item, idx) => (
-                  <div
-                    key={idx}
-                    className="h-16 flex-1 flex items-center justify-center font-semibold text-sm text-primary-foreground rounded transition-all"
-                    style={{ backgroundColor: item.color, minWidth: "40px" }}
-                  >
-                    {idx === 0 || timeline[idx - 1].process !== item.process ? item.process : ""}
-                  </div>
-                ))}
-              </div>
-              
-              {/* Time markers */}
-              {timeline.length > 0 && (
-                <div className="flex items-center gap-1">
+              {/* NEW: scrollable wrapper so the timeline can grow horizontally and be panned */}
+              <div className="overflow-x-auto" ref={timelineRef}>
+                {/* inner flex container forced to width = timeline.length * segmentWidth */}
+                <div
+                  className="flex items-center gap-1 mb-2"
+                  style={{ width: `${Math.max(timeline.length * 40, 0)}px` }}
+                >
                   {timeline.map((item, idx) => (
-                    <div key={idx} className="flex-1 text-xs text-center text-muted-foreground" style={{ minWidth: "40px" }}>
-                      {idx === 0 || timeline[idx - 1].process !== item.process ? item.time : ""}
+                    <div
+                      key={idx}
+                      // make each segment fixed width and not grow/shrink
+                      className="h-16 flex-none flex items-center justify-center font-semibold text-sm text-primary-foreground rounded transition-all"
+                      style={{ backgroundColor: item.color, minWidth: "40px", maxWidth: "40px" }}
+                    >
+                      {idx === 0 || timeline[idx - 1].process !== item.process ? item.process : ""}
                     </div>
                   ))}
-                  <div className="text-xs text-muted-foreground">{currentTime}</div>
                 </div>
-              )}
 
-              {timeline.length === 0 && (
-                <p className="text-center text-muted-foreground py-8">
-                  Select an algorithm and click Start to begin scheduling
-                </p>
-              )}
+                {/* Time markers - align with segments and scroll together */}
+                {timeline.length > 0 && (
+                  <div
+                    className="flex items-center gap-1"
+                    style={{ width: `${Math.max(timeline.length * 40, 0)}px` }}
+                  >
+                    {timeline.map((item, idx) => (
+                      <div
+                        key={idx}
+                        className="flex-none text-xs text-center text-muted-foreground"
+                        style={{ minWidth: "40px", maxWidth: "40px" }}
+                      >
+                        {idx === 0 || timeline[idx - 1].process !== item.process ? item.time : ""}
+                      </div>
+                    ))}
+                    {/* final current time marker sits after segments */}
+                    <div className="text-xs text-muted-foreground" style={{ minWidth: "40px" }}>
+                      {currentTime}
+                    </div>
+                  </div>
+                )}
+
+                {timeline.length === 0 && (
+                  <p className="text-center text-muted-foreground py-8">
+                    Select an algorithm and click Start to begin scheduling
+                  </p>
+                )}
+              </div>
             </div>
 
             {/* Process Table */}
@@ -298,11 +416,11 @@ export const CPUSchedulingVisualizer = () => {
                 <div key={index} className="text-foreground/80">
                   {entry}
                 </div>
-              ))
-            )}
+              )))
+            }
           </div>
         </CardContent>
       </Card>
     </div>
   );
-};
+});

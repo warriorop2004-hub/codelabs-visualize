@@ -1,16 +1,25 @@
-import { useState } from "react";
-import { useParams } from "react-router-dom";
+import { useState, useEffect , useRef} from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import { Navbar } from "@/components/Navbar";
 import { BSTVisualizer } from "@/components/BSTVisualizer";
-import { SortingVisualizer } from "@/components/SortingVisualizer";
-import { TCPVisualizer } from "@/components/TCPVisualizer";
-import { CPUSchedulingVisualizer } from "@/components/CPUSchedulingVisualizer";
-import { HashTableVisualizer } from "@/components/HashTableVisualizer";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { SortingVisualizer, SortingVisualizerHandle } from "@/components/SortingVisualizer";
+import { TCPVisualizer, TCPVisualizerHandle } from "@/components/TCPVisualizer";
+import { CPUSchedulingState, CPUSchedulingVisualizer } from "@/components/CPUSchedulingVisualizer";
+import { HashTableState, HashTableVisualizer } from "@/components/HashTableVisualizer";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { BookOpen, Send } from "lucide-react";
 import { toast } from "sonner";
+import { experimentApi } from "@/lib/api";
+import { useAuth } from "@/contexts/AuthContext";
+import { sub } from "date-fns";
 
 const experimentData = {
   bst: {
@@ -116,10 +125,42 @@ const experimentData = {
 };
 
 const Experiment = () => {
-  const { id } = useParams<{ id: string }>();
-  const [submissionText, setSubmissionText] = useState("");
+  const { slug } = useParams<{ slug: string }>();
+  const svgRef = useRef<SVGSVGElement | null>(null);
+  const hashTableRef = useRef<HashTableState>(null);
+  const cpuStateRef = useRef<CPUSchedulingState>(null);
+  const sortingRef = useRef<SortingVisualizerHandle>(null);
+  const tcpRef = useRef<TCPVisualizerHandle>(null);
+  const [experimentInfo, setExperimentInfo] = useState<any>(null);
+  const experiment = experimentData[slug as keyof typeof experimentData];
+  const [submissionText, setSubmissionText] = useState<string[]>(
+    Array(experiment?.questions.length).fill("")
+  );
 
-  const experiment = experimentData[id as keyof typeof experimentData];
+  useEffect(() => {
+    const fetchExperiment = async () => {
+      try {
+        const { data } = await experimentApi.getExperimentBySlug(slug!);
+        setExperimentInfo(data);
+      } catch (error) {
+        console.error("Error fetching experiment:", error);
+      }
+    };
+
+    fetchExperiment();
+  }, [slug]);
+
+  const id = experimentInfo?.id;
+  const { profile } = useAuth();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (profile?.role === "instructor") {
+      navigate("/dashboard");
+    }
+  }, [profile, navigate]);
+
+  if (!profile || profile.role !== "student") return null;
 
   if (!experiment) {
     return (
@@ -127,42 +168,100 @@ const Experiment = () => {
         <Navbar />
         <div className="container mx-auto px-4 py-24 text-center">
           <h1 className="text-4xl font-bold mb-4">Experiment Not Found</h1>
-          <p className="text-muted-foreground">This experiment hasn't been implemented yet.</p>
+          <p className="text-muted-foreground">
+            This experiment hasn't been implemented yet.
+          </p>
         </div>
       </div>
     );
   }
 
-  const handleSubmit = () => {
-    if (!submissionText.trim()) {
+  const handleSubmit = async () => {
+    if (
+      !submissionText.length ||
+      submissionText.some((text) => text.trim() === "")
+    ) {
       toast.error("Please provide your analysis before submitting");
       return;
     }
-    toast.success("Lab report submitted successfully!");
-    setSubmissionText("");
+
+    try {
+      console.log("Submitting lab report with data:", {
+        answers: submissionText,
+        experimentData: getCurrentState(),
+      });
+      await experimentApi.submit(id!, {
+        answers: submissionText,
+        experimentData: getCurrentState(), // Implement this based on visualizer
+      });
+
+      toast.success("Lab report submitted successfully!");
+      setSubmissionText(Array(experiment.questions.length).fill(""));
+    } catch (error) {
+      toast.error("Failed to submit lab report");
+      console.error(error);
+    }
+  };
+
+  const getCurrentState = () => {
+    // Get current state of the visualizer based on experiment type
+    switch (slug) {
+      case "bst":
+        return {
+          type: "bst",
+          treeData: svgRef.current?.outerHTML,
+        };
+      case "sorting":
+        return {
+          type: "sorting",
+          arrayState: sortingRef.current?.getState(),
+        };
+      // Add cases for other visualizers
+      case "hash-tables":
+        return {
+          type: "hash-tables",
+          tableState:{
+            table: hashTableRef.current?.table,
+            loadFactor: hashTableRef.current?.loadFactor,
+            operationsCount:hashTableRef.current?.operationsCount,
+          },
+        };
+        case "cpu-scheduling":
+        return {
+          type: "cpu-scheduling",
+          cpuState: cpuStateRef.current,
+        };
+        case "tcp-handshake":
+        return {
+          type: "tcp-handshake",
+          state: tcpRef.current?.getState(),
+        };
+      default:
+        return {};
+    }
   };
 
   const renderVisualizer = () => {
-    switch (id) {
+    switch (slug) {
       case "bst":
-        return <BSTVisualizer />;
+        return <BSTVisualizer ref={svgRef} />;
       case "sorting":
-        return <SortingVisualizer />;
+        return <SortingVisualizer ref={sortingRef}/>;
       case "tcp-handshake":
-        return <TCPVisualizer />;
+        return <TCPVisualizer ref={tcpRef}/>;
       case "cpu-scheduling":
-        return <CPUSchedulingVisualizer />;
+        return <CPUSchedulingVisualizer ref={cpuStateRef}/>;
       case "hash-tables":
-        return <HashTableVisualizer />;
+        return <HashTableVisualizer ref={hashTableRef} />;
       default:
-        return <BSTVisualizer />;
+        return <BSTVisualizer ref={svgRef}/>;
     }
   };
 
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      
+
       <div className="container mx-auto px-4 py-6">
         <div className="mb-6 animate-fade-in-up">
           <h1 className="text-3xl font-bold mb-2">{experiment.title}</h1>
@@ -201,11 +300,15 @@ const Experiment = () => {
                 <div className="pt-4 border-t">
                   <div className="flex items-center justify-between text-xs text-muted-foreground mb-2">
                     <span>Due Date:</span>
-                    <span className="font-semibold text-foreground">Tomorrow, 11:59 PM</span>
+                    <span className="font-semibold text-foreground">
+                      Tomorrow, 11:59 PM
+                    </span>
                   </div>
                   <div className="flex items-center justify-between text-xs text-muted-foreground">
                     <span>Course:</span>
-                    <span className="font-semibold text-foreground">{experiment.course}</span>
+                    <span className="font-semibold text-foreground">
+                      {experiment.course}
+                    </span>
                   </div>
                 </div>
               </CardContent>
@@ -213,12 +316,18 @@ const Experiment = () => {
           </div>
 
           {/* Center Panel - Visualization */}
-          <div className="lg:col-span-2 animate-fade-in-up" style={{ animationDelay: "0.1s" }}>
+          <div
+            className="lg:col-span-2 animate-fade-in-up"
+            style={{ animationDelay: "0.1s" }}
+          >
             {renderVisualizer()}
           </div>
 
           {/* Right Panel - Controls & Submission */}
-          <div className="lg:col-span-1 space-y-6 animate-fade-in" style={{ animationDelay: "0.2s" }}>
+          <div
+            className="lg:col-span-1 space-y-6 animate-fade-in"
+            style={{ animationDelay: "0.2s" }}
+          >
             <Card className="shadow-md">
               <CardHeader>
                 <CardTitle className="text-lg">Submit Analysis</CardTitle>
@@ -232,15 +341,23 @@ const Experiment = () => {
                     </label>
                     <Textarea
                       placeholder="Your answer..."
-                      value={idx === 0 ? submissionText : ""}
-                      onChange={idx === 0 ? (e) => setSubmissionText(e.target.value) : undefined}
+                      value={submissionText[idx] || ""}
+                      onChange={(e) => {
+                        const updated = [...submissionText];
+                        updated[idx] = e.target.value;
+                        setSubmissionText(updated);
+                      }}
                       className="min-h-[100px]"
                     />
                   </div>
                 ))}
 
                 <div className="pt-4 space-y-2">
-                  <Button variant="hero" className="w-full" onClick={handleSubmit}>
+                  <Button
+                    variant="hero"
+                    className="w-full"
+                    onClick={handleSubmit}
+                  >
                     <Send className="h-4 w-4" />
                     Submit Lab Report
                   </Button>

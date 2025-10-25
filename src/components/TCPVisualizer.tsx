@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -16,11 +16,32 @@ interface Packet {
   active: boolean;
 }
 
-export const TCPVisualizer = () => {
+export type TCPVisualizerHandle = {
+  start: () => Promise<void>;
+  pause: () => void;
+  reset: () => void;
+  getState: () => {
+    currentStep: Step;
+    packets: Packet[];
+    isAnimating: boolean;
+    log: string[];
+  };
+};
+
+// Replace the original component export with a forwardRef wrapper
+export const TCPVisualizer = forwardRef<TCPVisualizerHandle>((props, ref) => {
   const [currentStep, setCurrentStep] = useState<Step>(0);
   const [packets, setPackets] = useState<Packet[]>([]);
   const [isAnimating, setIsAnimating] = useState(false);
   const [log, setLog] = useState<string[]>([]);
+
+  // stable ref to allow cancelling animation loops
+  const isAnimatingRef = useRef<boolean>(false);
+
+  // keep ref in sync with state
+  useEffect(() => {
+    isAnimatingRef.current = isAnimating;
+  }, [isAnimating]);
 
   const addLog = (message: string) => {
     setLog((prev) => [...prev, message]);
@@ -30,7 +51,8 @@ export const TCPVisualizer = () => {
 
   const animatePacket = async (
     type: Packet["type"],
-    from: "client" | "server"
+    from: "client" | "server",
+    allowWhileIdle = false // new param: permit animation even when not in handshake
   ) => {
     const newPacket: Packet = {
       id: Date.now(),
@@ -46,7 +68,20 @@ export const TCPVisualizer = () => {
     // Animate movement
     const steps = 30;
     for (let i = 0; i <= steps; i++) {
+      // allow early cancel only when not explicitly allowed while idle
+      if (!allowWhileIdle && !isAnimatingRef.current) {
+        setPackets((prev) => prev.filter((p) => p.id !== newPacket.id));
+        return;
+      }
+
       await sleep(30);
+
+      // check again after sleep
+      if (!allowWhileIdle && !isAnimatingRef.current) {
+        setPackets((prev) => prev.filter((p) => p.id !== newPacket.id));
+        return;
+      }
+
       setPackets((prev) =>
         prev.map((p) =>
           p.id === newPacket.id
@@ -60,17 +95,22 @@ export const TCPVisualizer = () => {
     }
 
     await sleep(500);
+    if (!allowWhileIdle && !isAnimatingRef.current) {
+      setPackets((prev) => prev.filter((p) => p.id !== newPacket.id));
+      return;
+    }
     setPackets((prev) => prev.filter((p) => p.id !== newPacket.id));
   };
 
   const startHandshake = async () => {
     if (isAnimating) return;
-    
+
     setIsAnimating(true);
+    isAnimatingRef.current = true;
     setCurrentStep(0);
     setPackets([]);
     setLog([]);
-    
+
     addLog("🚀 Starting TCP Three-Way Handshake...");
     await sleep(500);
 
@@ -99,8 +139,9 @@ export const TCPVisualizer = () => {
     setCurrentStep(4);
     addLog("✅ Connection Established! Ready to transfer data.");
     toast.success("TCP handshake completed!");
-    
+
     setIsAnimating(false);
+    isAnimatingRef.current = false;
   };
 
   const reset = () => {
@@ -108,7 +149,53 @@ export const TCPVisualizer = () => {
     setPackets([]);
     setLog([]);
     setIsAnimating(false);
+    isAnimatingRef.current = false;
   };
+
+  // new: send a data packet from client and get an ACK from server
+  const sendData = async (payload = "hello") => {
+    if (currentStep !== 4) {
+      toast.error("Connection not established — cannot send data");
+      return;
+    }
+
+    addLog(`📤 Client → Server: DATA (payload: "${payload}")`);
+    // allow animation while idle so we don't need to flip isAnimating for this
+    await animatePacket("DATA", "client", true);
+
+    // small delay to simulate processing
+    await sleep(300);
+
+    addLog(`📥 Server → Client: ACK (for payload)`);
+    await animatePacket("ACK", "server", true);
+  };
+
+  // expose imperative methods
+  useImperativeHandle(
+    ref,
+    () => ({
+      start: async () => {
+        return startHandshake();
+      },
+      pause: () => {
+        setIsAnimating(false);
+        isAnimatingRef.current = false;
+        toast.info("Handshake paused");
+      },
+      reset: () => {
+        reset();
+      },
+      getState: () => ({
+        currentStep,
+        packets,
+        isAnimating,
+        log,
+      }),
+      sendData, // exposed so parent can trigger packets programmatically
+    }),
+    // keep the handle up-to-date
+    [startHandshake, reset, currentStep, packets, isAnimating, log, sendData]
+  );
 
   const getStepDescription = () => {
     switch (currentStep) {
@@ -195,14 +282,25 @@ export const TCPVisualizer = () => {
           <CardTitle className="text-lg">Controls</CardTitle>
         </CardHeader>
         <CardContent>
+          {/* Start Handshake button (existing) */}
           <Button
             variant="hero"
-            className="w-full"
+            className="w-full mb-2"
             onClick={startHandshake}
             disabled={isAnimating}
           >
             <Play className="h-4 w-4" />
             {isAnimating ? "Handshake in Progress..." : "Start Handshake"}
+          </Button>
+
+          {/* New: Send Packet button (enabled only when connected) */}
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={() => sendData()}
+            disabled={currentStep !== 4}
+          >
+            Send Packet
           </Button>
         </CardContent>
       </Card>
@@ -264,4 +362,4 @@ export const TCPVisualizer = () => {
       </Card>
     </div>
   );
-};
+});

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, forwardRef, useImperativeHandle } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
@@ -8,269 +8,348 @@ import { toast } from "sonner";
 
 type Algorithm = "bubble" | "merge" | "quick" | "insertion";
 
-export const SortingVisualizer = () => {
-  const [array, setArray] = useState<number[]>([]);
-  const [algorithm, setAlgorithm] = useState<Algorithm>("bubble");
-  const [isRunning, setIsRunning] = useState(false);
-  const [speed, setSpeed] = useState([50]);
-  const [comparing, setComparing] = useState<number[]>([]);
-  const [sorted, setSorted] = useState<number[]>([]);
-  const [log, setLog] = useState<string[]>([]);
+// Add a handle type for consumers
+export type SortingVisualizerHandle = {
+	start: () => Promise<void>;
+	pause: () => void;
+	reset: () => void;
+	generate: () => void;
+	getState: () => {
+		array: number[];
+		algorithm: Algorithm;
+		isRunning: boolean;
+		speed: number[];
+		comparing: number[];
+		sorted: number[];
+		log: string[];
+	};
+};
 
-  const addLog = (message: string) => {
-    setLog((prev) => [...prev, message]);
-  };
+export const SortingVisualizer = forwardRef<SortingVisualizerHandle>((props, ref) => {
+	const [array, setArray] = useState<number[]>([]);
+	const [algorithm, setAlgorithm] = useState<Algorithm>("bubble");
+	const [isRunning, setIsRunning] = useState(false);
+	const [speed, setSpeed] = useState([50]);
+	const [comparing, setComparing] = useState<number[]>([]);
+	const [sorted, setSorted] = useState<number[]>([]);
+	const [log, setLog] = useState<string[]>([]);
 
-  const generateArray = () => {
-    const newArray = Array.from({ length: 30 }, () => Math.floor(Math.random() * 100) + 10);
-    setArray(newArray);
-    setComparing([]);
-    setSorted([]);
-    setLog([]);
-    addLog("🎲 Generated new random array");
-  };
+	// stable ref used inside async loops — initialize false
+	const isRunningRef = useRef<boolean>(false);
 
-  useEffect(() => {
-    generateArray();
-  }, []);
+	// keep ref in sync for cases where state changes from outside
+	useEffect(() => {
+		isRunningRef.current = isRunning;
+	}, [isRunning]);
+	const addLog = (message: string) => {
+		setLog((prev) => [...prev, message]);
+	};
+
+	const generateArray = () => {
+		const newArray = Array.from({ length: 30 }, () => Math.floor(Math.random() * 100) + 10);
+		setArray(newArray);
+		setComparing([]);
+		setSorted([]);
+		setLog([]);
+		addLog("🎲 Generated new random array");
+	};
+
+	useEffect(() => {
+		generateArray();
+	}, []);
+
+  const handleStart = async () => {
+		if (isRunning) {
+			setIsRunning(false);
+			isRunningRef.current = false;
+			toast.info("Sorting paused");
+			return;
+		}
+
+		// Set both state and ref immediately so async loops see the correct flag
+		setIsRunning(true);
+		isRunningRef.current = true;
+		setSorted([]);
+		setComparing([]);
+
+		switch (algorithm) {
+			case "bubble":
+				await bubbleSort();
+				break;
+			case "insertion":
+				await insertionSort();
+				break;
+			case "quick":
+				await startQuickSort();
+				break;
+			default:
+				toast.error("Algorithm not implemented yet");
+				setIsRunning(false);
+		}
+	};
+
+  // Expose imperative methods to parent via ref
+	useImperativeHandle(
+		ref,
+		() => ({
+			start: async () => {
+				// reuse existing handler
+				return handleStart();
+			},
+			pause: () => {
+				setIsRunning(false);
+				isRunningRef.current = false;
+				toast.info("Sorting paused");
+			},
+			reset: () => {
+				setIsRunning(false);
+				isRunningRef.current = false;
+				generateArray();
+			},
+			generate: () => {
+				generateArray();
+			},
+			getState: () => ({
+				array,
+				algorithm,
+				isRunning,
+				speed,
+				comparing,
+				sorted,
+				log,
+			}),
+		}),
+		// keep handle up to date with relevant state/handlers
+		[handleStart, generateArray, array, algorithm, isRunning, speed, comparing, sorted, log]
+	);
 
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-  const bubbleSort = async () => {
-    const arr = [...array];
-    const n = arr.length;
-    addLog("🫧 Starting Bubble Sort...");
+	const bubbleSort = async () => {
+		const arr = [...array];
+		const n = arr.length;
+		addLog("🫧 Starting Bubble Sort...");
 
-    for (let i = 0; i < n - 1; i++) {
-      for (let j = 0; j < n - i - 1; j++) {
-        if (!isRunning) return;
-        
-        setComparing([j, j + 1]);
-        addLog(`Comparing ${arr[j]} and ${arr[j + 1]}`);
-        await sleep(101 - speed[0]);
+		for (let i = 0; i < n - 1; i++) {
+			for (let j = 0; j < n - i - 1; j++) {
+				// read ref instead of state to avoid stale closure
+				if (!isRunningRef.current) {
+					// stop early without marking finished
+					return;
+				}
 
-        if (arr[j] > arr[j + 1]) {
-          [arr[j], arr[j + 1]] = [arr[j + 1], arr[j]];
-          setArray([...arr]);
-          addLog(`✓ Swapped ${arr[j + 1]} and ${arr[j]}`);
-        }
-      }
-      setSorted((prev) => [...prev, n - 1 - i]);
-    }
-    
-    setSorted(arr.map((_, i) => i));
-    setComparing([]);
-    addLog("✅ Sorting complete!");
-    setIsRunning(false);
-  };
+				setComparing([j, j + 1]);
+				addLog(`Comparing ${arr[j]} and ${arr[j + 1]}`);
+				await sleep(101 - speed[0]);
 
-  const insertionSort = async () => {
-    const arr = [...array];
-    addLog("📌 Starting Insertion Sort...");
+				if (arr[j] > arr[j + 1]) {
+					[arr[j], arr[j + 1]] = [arr[j + 1], arr[j]];
+					setArray([...arr]);
+					addLog(`✓ Swapped ${arr[j + 1]} and ${arr[j]}`);
+				}
+			}
+			setSorted((prev) => [...prev, n - 1 - i]);
+		}
 
-    for (let i = 1; i < arr.length; i++) {
-      const key = arr[i];
-      let j = i - 1;
+		setSorted(arr.map((_, i) => i));
+		setComparing([]);
+		addLog("✅ Sorting complete!");
+		// mark stopped both in state and ref
+		setIsRunning(false);
+		isRunningRef.current = false;
+	};
 
-      setComparing([i]);
-      addLog(`Inserting ${key} into sorted portion`);
-      await sleep(101 - speed[0]);
+	const insertionSort = async () => {
+		const arr = [...array];
+		addLog("📌 Starting Insertion Sort...");
 
-      while (j >= 0 && arr[j] > key) {
-        if (!isRunning) return;
-        
-        setComparing([j, j + 1]);
-        arr[j + 1] = arr[j];
-        setArray([...arr]);
-        await sleep(101 - speed[0]);
-        j--;
-      }
+		for (let i = 1; i < arr.length; i++) {
+			// check ref for pause
+			if (!isRunningRef.current) {
+				return;
+			}
 
-      arr[j + 1] = key;
-      setArray([...arr]);
-      setSorted((prev) => [...prev, i]);
-    }
+			const key = arr[i];
+			let j = i - 1;
 
-    setSorted(arr.map((_, i) => i));
-    setComparing([]);
-    addLog("✅ Sorting complete!");
-    setIsRunning(false);
-  };
+			setComparing([i]);
+			addLog(`Inserting ${key} into sorted portion`);
+			await sleep(101 - speed[0]);
 
-  const quickSort = async (arr: number[], low: number, high: number, depth = 0): Promise<number[]> => {
-    if (low < high) {
-      const pi = await partition(arr, low, high, depth);
-      await quickSort(arr, low, pi - 1, depth + 1);
-      await quickSort(arr, pi + 1, high, depth + 1);
-    }
-    return arr;
-  };
+			while (j >= 0 && arr[j] > key) {
+				if (!isRunningRef.current) {
+					return;
+				}
 
-  const partition = async (arr: number[], low: number, high: number, depth: number): Promise<number> => {
-    const pivot = arr[high];
-    addLog(`Pivot: ${pivot} (depth ${depth})`);
-    let i = low - 1;
+				setComparing([j, j + 1]);
+				arr[j + 1] = arr[j];
+				setArray([...arr]);
+				await sleep(101 - speed[0]);
+				j--;
+			}
 
-    for (let j = low; j < high; j++) {
-      if (!isRunning) return i + 1;
-      
-      setComparing([j, high]);
-      await sleep(101 - speed[0]);
+			arr[j + 1] = key;
+			setArray([...arr]);
+			setSorted((prev) => [...prev, i]);
+		}
 
-      if (arr[j] < pivot) {
-        i++;
-        [arr[i], arr[j]] = [arr[j], arr[i]];
-        setArray([...arr]);
-        addLog(`Swapped ${arr[j]} and ${arr[i]}`);
-      }
-    }
+		setSorted(arr.map((_, i) => i));
+		setComparing([]);
+		addLog("✅ Sorting complete!");
+		setIsRunning(false);
+		isRunningRef.current = false;
+	};
 
-    [arr[i + 1], arr[high]] = [arr[high], arr[i + 1]];
-    setArray([...arr]);
-    setSorted((prev) => [...prev, i + 1]);
-    return i + 1;
-  };
+	const partition = async (arr: number[], low: number, high: number, depth: number): Promise<number> => {
+		const pivot = arr[high];
+		addLog(`Pivot: ${pivot} (depth ${depth})`);
+		let i = low - 1;
 
-  const startQuickSort = async () => {
-    const arr = [...array];
-    addLog("⚡ Starting Quick Sort...");
-    await quickSort(arr, 0, arr.length - 1);
-    setSorted(arr.map((_, i) => i));
-    setComparing([]);
-    addLog("✅ Sorting complete!");
-    setIsRunning(false);
-  };
+		for (let j = low; j < high; j++) {
+			if (!isRunningRef.current) {
+				return i + 1;
+			}
 
-  const handleStart = async () => {
-    if (isRunning) {
-      setIsRunning(false);
-      toast.info("Sorting paused");
-      return;
-    }
+			setComparing([j, high]);
+			await sleep(101 - speed[0]);
 
-    setIsRunning(true);
-    setSorted([]);
-    setComparing([]);
+			if (arr[j] < pivot) {
+				i++;
+				[arr[i], arr[j]] = [arr[j], arr[i]];
+				setArray([...arr]);
+				addLog(`Swapped ${arr[j]} and ${arr[i]}`);
+			}
+		}
 
-    switch (algorithm) {
-      case "bubble":
-        await bubbleSort();
-        break;
-      case "insertion":
-        await insertionSort();
-        break;
-      case "quick":
-        await startQuickSort();
-        break;
-      default:
-        toast.error("Algorithm not implemented yet");
-        setIsRunning(false);
-    }
-  };
+		[arr[i + 1], arr[high]] = [arr[high], arr[i + 1]];
+		setArray([...arr]);
+		setSorted((prev) => [...prev, i + 1]);
+		return i + 1;
+	};
 
-  const maxValue = Math.max(...array, 100);
+	const startQuickSort = async () => {
+		const arr = [...array];
+		addLog("⚡ Starting Quick Sort...");
+		await quickSort(arr, 0, arr.length - 1);
+		setSorted(arr.map((_, i) => i));
+		setComparing([]);
+		addLog("✅ Sorting complete!");
+		setIsRunning(false);
+		isRunningRef.current = false;
+	};
 
-  return (
-    <div className="space-y-6">
-      <Card className="shadow-md">
-        <CardHeader>
-          <CardTitle className="flex items-center justify-between">
-            <span>Sorting Visualization</span>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={generateArray} disabled={isRunning}>
-                <Shuffle className="h-4 w-4" />
-                Shuffle
-              </Button>
-              <Button variant="outline" size="sm" onClick={() => { setIsRunning(false); generateArray(); }}>
-                <RotateCcw className="h-4 w-4" />
-                Reset
-              </Button>
-            </div>
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="h-[400px] flex items-end justify-center gap-1 bg-muted/20 rounded-lg p-4">
-            {array.map((value, idx) => (
-              <div
-                key={idx}
-                className="flex-1 transition-all duration-200 rounded-t flex items-end justify-center"
-                style={{
-                  height: `${(value / maxValue) * 100}%`,
-                  backgroundColor: sorted.includes(idx)
-                    ? "hsl(var(--success))"
-                    : comparing.includes(idx)
-                    ? "hsl(var(--accent))"
-                    : "hsl(var(--primary))",
-                  minWidth: "8px",
-                }}
-              >
-                <span className="text-xs text-primary-foreground font-semibold mb-1">
-                  {value}
-                </span>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
+	const quickSort = async (arr: number[], low: number, high: number, depth = 0): Promise<number[]> => {
+		if (low < high) {
+			const pi = await partition(arr, low, high, depth);
+			await quickSort(arr, low, pi - 1, depth + 1);
+			await quickSort(arr, pi + 1, high, depth + 1);
+		}
+		return arr;
+	};
 
-      <Card className="shadow-md">
-        <CardHeader>
-          <CardTitle className="text-lg">Controls</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Algorithm</label>
-              <Select value={algorithm} onValueChange={(v) => setAlgorithm(v as Algorithm)} disabled={isRunning}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="bubble">Bubble Sort</SelectItem>
-                  <SelectItem value="insertion">Insertion Sort</SelectItem>
-                  <SelectItem value="quick">Quick Sort</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+	const maxValue = Math.max(...array, 100);
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Speed</label>
-              <Slider
-                value={speed}
-                onValueChange={setSpeed}
-                min={10}
-                max={100}
-                step={10}
-                className="w-full"
-              />
-            </div>
-          </div>
+	return (
+		<div className="space-y-6">
+			<Card className="shadow-md">
+				<CardHeader>
+					<CardTitle className="flex items-center justify-between">
+						<span>Sorting Visualization</span>
+						<div className="flex gap-2">
+							<Button variant="outline" size="sm" onClick={generateArray} disabled={isRunning}>
+								<Shuffle className="h-4 w-4" />
+								Shuffle
+							</Button>
+							<Button variant="outline" size="sm" onClick={() => { setIsRunning(false); generateArray(); }}>
+								<RotateCcw className="h-4 w-4" />
+								Reset
+							</Button>
+						</div>
+					</CardTitle>
+				</CardHeader>
+				<CardContent>
+					<div className="h-[400px] flex items-end justify-center gap-1 bg-muted/20 rounded-lg p-4">
+						{array.map((value, idx) => (
+							<div
+								key={idx}
+								className="flex-1 transition-all duration-200 rounded-t flex items-end justify-center"
+								style={{
+									height: `${(value / maxValue) * 100}%`,
+									backgroundColor: sorted.includes(idx)
+										? "hsl(var(--success))"
+										: comparing.includes(idx)
+										? "hsl(var(--accent))"
+										: "hsl(var(--primary))",
+									minWidth: "8px",
+								}}
+							>
+								<span className="text-xs text-primary-foreground font-semibold mb-1">
+									{value}
+								</span>
+							</div>
+						))}
+					</div>
+				</CardContent>
+			</Card>
 
-          <Button variant="hero" className="w-full" onClick={handleStart}>
-            {isRunning ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-            {isRunning ? "Pause" : "Start Sorting"}
-          </Button>
-        </CardContent>
-      </Card>
+			<Card className="shadow-md">
+				<CardHeader>
+					<CardTitle className="text-lg">Controls</CardTitle>
+				</CardHeader>
+				<CardContent className="space-y-4">
+					<div className="grid grid-cols-2 gap-4">
+						<div className="space-y-2">
+							<label className="text-sm font-medium">Algorithm</label>
+							<Select value={algorithm} onValueChange={(v) => setAlgorithm(v as Algorithm)} disabled={isRunning}>
+								<SelectTrigger>
+									<SelectValue />
+								</SelectTrigger>
+								<SelectContent>
+									<SelectItem value="bubble">Bubble Sort</SelectItem>
+									<SelectItem value="insertion">Insertion Sort</SelectItem>
+									<SelectItem value="quick">Quick Sort</SelectItem>
+								</SelectContent>
+							</Select>
+						</div>
 
-      <Card className="shadow-md">
-        <CardHeader>
-          <CardTitle className="text-lg">Operation Log</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="bg-muted/50 rounded-lg p-4 max-h-[200px] overflow-y-auto font-mono text-xs space-y-1">
-            {log.length === 0 ? (
-              <p className="text-muted-foreground">Start sorting to see operations...</p>
-            ) : (
-              log.slice(-10).map((entry, index) => (
-                <div key={index} className="text-foreground/80">
-                  {entry}
-                </div>
-              ))
-            )}
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
-};
+						<div className="space-y-2">
+							<label className="text-sm font-medium">Speed</label>
+							<Slider
+								value={speed}
+								onValueChange={setSpeed}
+								min={10}
+								max={100}
+								step={10}
+								className="w-full"
+							/>
+						</div>
+					</div>
+
+					<Button variant="hero" className="w-full" onClick={handleStart}>
+						{isRunning ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+						{isRunning ? "Pause" : "Start Sorting"}
+					</Button>
+				</CardContent>
+			</Card>
+
+			<Card className="shadow-md">
+				<CardHeader>
+					<CardTitle className="text-lg">Operation Log</CardTitle>
+				</CardHeader>
+				<CardContent>
+					<div className="bg-muted/50 rounded-lg p-4 max-h-[200px] overflow-y-auto font-mono text-xs space-y-1">
+						{log.length === 0 ? (
+							<p className="text-muted-foreground">Start sorting to see operations...</p>
+						) : (
+							log.slice(-10).map((entry, index) => (
+								<div key={index} className="text-foreground/80">
+									{entry}
+								</div>
+							))
+						)}
+					</div>
+				</CardContent>
+			</Card>
+		</div>
+	);
+});

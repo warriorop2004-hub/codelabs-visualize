@@ -1,8 +1,17 @@
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { GraduationCap, BookOpen, User } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 
 export const Navbar = () => {
+  const { user, signOut } = useAuth();
+  const navigate = useNavigate();
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate("/signin");
+  };
+
   return (
     <nav className="sticky top-0 z-50 w-full border-b bg-card/80 backdrop-blur-md shadow-sm">
       <div className="container mx-auto px-4 py-4 flex items-center justify-between">
@@ -26,15 +35,26 @@ export const Navbar = () => {
         </div>
 
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="sm" asChild>
-            <Link to="/dashboard">
-              <User className="h-4 w-4" />
-              Sign In
-            </Link>
-          </Button>
-          <Button variant="hero" size="sm" asChild>
-            <Link to="/dashboard">Get Started</Link>
-          </Button>
+          {!user ? (
+            <>
+              <Button variant="ghost" size="sm" asChild>
+                <Link to="/signin">
+                  <User className="h-4 w-4" />
+                  Sign In
+                </Link>
+              </Button>
+              <Button variant="hero" size="sm" asChild>
+                <Link to="/signup">Get Started</Link>
+              </Button>
+            </>
+          ) : (
+            <div className="flex items-center gap-3">
+              <div className="text-sm text-foreground/90">{user.email}</div>
+              <Button variant="ghost" size="sm" onClick={handleSignOut}>
+                Sign Out
+              </Button>
+            </div>
+          )}
         </div>
       </div>
     </nav>

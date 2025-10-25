@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, forwardRef, useImperativeHandle, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,7 +11,19 @@ interface HashEntry {
   index: number;
 }
 
-export const HashTableVisualizer = () => {
+export interface HashTableState {
+  table: (HashEntry | null)[];
+  loadFactor: number;
+  operationsCount: {
+    insertions: number;
+    deletions: number;
+    searches: number;
+    collisions: number;
+  };
+  hashFunction: (key: string) => number;
+}
+
+export const HashTableVisualizer = forwardRef<HashTableState>((props, ref) => {
   const [tableSize] = useState(10);
   const [hashTable, setHashTable] = useState<(HashEntry | null)[]>(Array(10).fill(null));
   const [inputKey, setInputKey] = useState("");
@@ -19,6 +31,12 @@ export const HashTableVisualizer = () => {
   const [searchKey, setSearchKey] = useState("");
   const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null);
   const [log, setLog] = useState<string[]>([]);
+  const [operationsCount, setOperationsCount] = useState({
+    insertions: 0,
+    deletions: 0,
+    searches: 0,
+    collisions: 0,
+  });
 
   const addLog = (message: string) => {
     setLog((prev) => [...prev, message]);
@@ -32,6 +50,13 @@ export const HashTableVisualizer = () => {
     addLog(`Hash("${key}") = ${hash}`);
     return hash;
   };
+
+  useImperativeHandle(ref, () => ({
+    table: hashTable,
+    loadFactor,
+    operationsCount,
+    hashFunction,
+  }));
 
   const handleInsert = () => {
     if (!inputKey.trim() || !inputValue.trim()) {
@@ -63,6 +88,17 @@ export const HashTableVisualizer = () => {
     setHighlightedIndex(index);
     setTimeout(() => setHighlightedIndex(null), 2000);
 
+    if (probeCount > 0) {
+      setOperationsCount(prev => ({
+        ...prev,
+        collisions: prev.collisions + 1,
+      }));
+    }
+    setOperationsCount(prev => ({
+      ...prev,
+      insertions: prev.insertions + 1,
+    }));
+
     addLog(`✅ Inserted "${inputKey}": "${inputValue}" at index ${index}`);
     toast.success(`Inserted at index ${index}`);
     
@@ -86,6 +122,10 @@ export const HashTableVisualizer = () => {
         setTimeout(() => setHighlightedIndex(null), 3000);
         addLog(`✅ Found "${searchKey}" at index ${index}`);
         toast.success(`Found at index ${index}!`);
+        setOperationsCount(prev => ({
+          ...prev,
+          searches: prev.searches + 1,
+        }));
         return;
       }
 
@@ -110,6 +150,10 @@ export const HashTableVisualizer = () => {
       setHashTable(newTable);
       addLog(`🗑️ Deleted key "${key}" from index ${index}`);
       toast.success("Entry deleted");
+      setOperationsCount(prev => ({
+        ...prev,
+        deletions: prev.deletions + 1,
+      }));
     }
   };
 
@@ -120,6 +164,12 @@ export const HashTableVisualizer = () => {
     setInputValue("");
     setSearchKey("");
     setHighlightedIndex(null);
+    setOperationsCount({
+      insertions: 0,
+      deletions: 0,
+      searches: 0,
+      collisions: 0,
+    });
     toast.success("Hash table cleared");
   };
 
@@ -266,4 +316,4 @@ export const HashTableVisualizer = () => {
       </Card>
     </div>
   );
-};
+});
