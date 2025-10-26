@@ -20,7 +20,7 @@ api.interceptors.request.use((config) => {
 
 export const experimentApi = {
   getAll: () => api.get('/experiments'),
-  submit: (id: string, data: any) => api.post(`/experiments/${id}/submit`, data),
+  submit: (id: string, data: any) => api.post(`/experiments/submit/${id}`, data),
   getExperimentBySlug: (slug: string) => api.get(`/experiments/slug/${slug}`),
 };
 

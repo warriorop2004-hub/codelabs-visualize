@@ -176,6 +176,64 @@ const Experiment = () => {
     );
   }
 
+  // --- new helper: produce a serializable snapshot for diverse visualizers ---
+  const serializeState = (rawState: any) => {
+    if (rawState == null) return null;
+
+    // DOM nodes / SVG: already returned as outerHTML in getCurrentState for BST
+    if (typeof rawState === "string") {
+      // could be outerHTML or JSON string
+      return rawState;
+    }
+
+    // If the visualizer exposed a getState() with complex objects, strip functions and circular refs
+    try {
+      return JSON.parse(JSON.stringify(rawState));
+    } catch {
+      // fallback: toString
+      try {
+        return String(rawState);
+      } catch {
+        return null;
+      }
+    }
+  };
+
+  // Build a consistent submission document that the backend can use to render a PDF
+  const buildSubmissionDocument = (answers: string[], rawExperimentState: any) => {
+    const timestamp = new Date().toISOString();
+    const student = {
+      id: profile?.id ?? "unknown",
+      name: profile?.full_name ?? "Unknown Student",
+    };
+
+    // include canonical experiment metadata (instructions, tasks, questions) if available from server
+    const metadata = {
+      experimentId: id,
+      title: experimentInfo?.title ?? experiment?.title,
+      course: experimentInfo?.course ?? experiment?.course,
+      objectives: experimentInfo?.objectives ?? experiment?.objectives,
+      tasks: experimentInfo?.tasks ?? experiment?.tasks,
+      questions: experimentInfo?.questions ?? experiment?.questions,
+    };
+
+    const snapshot = serializeState(rawExperimentState);
+
+    return {
+      meta: {
+        generatedAt: timestamp,
+        student,
+        metadata,
+      },
+      answers: answers.map((a, idx) => ({
+        questionIndex: idx,
+        questionText: metadata.questions?.[idx] ?? null,
+        answerText: a,
+      })),
+      experimentState: snapshot,
+    };
+  };
+
   const handleSubmit = async () => {
     if (
       !submissionText.length ||
@@ -186,14 +244,13 @@ const Experiment = () => {
     }
 
     try {
-      console.log("Submitting lab report with data:", {
-        answers: submissionText,
-        experimentData: getCurrentState(),
-      });
-      await experimentApi.submit(id!, {
-        answers: submissionText,
-        experimentData: getCurrentState(), // Implement this based on visualizer
-      });
+      const currentState = getCurrentState();
+      const documentPayload = buildSubmissionDocument(submissionText, currentState);
+
+      console.log("Submitting lab report with document:", documentPayload);
+
+      // send full normalized submission document to backend - backend can create PDF + store
+      await experimentApi.submit(id!, documentPayload);
 
       toast.success("Lab report submitted successfully!");
       setSubmissionText(Array(experiment.questions.length).fill(""));
@@ -209,32 +266,32 @@ const Experiment = () => {
       case "bst":
         return {
           type: "bst",
-          treeData: svgRef.current?.outerHTML,
+          // DOM snapshot - serializable string
+          snapshot: svgRef.current?.outerHTML ?? null,
         };
       case "sorting":
         return {
           type: "sorting",
-          arrayState: sortingRef.current?.getState(),
+          arrayState: serializeState(sortingRef.current?.getState?.() ?? sortingRef.current),
         };
-      // Add cases for other visualizers
       case "hash-tables":
         return {
           type: "hash-tables",
-          tableState:{
+          tableState: serializeState({
             table: hashTableRef.current?.table,
             loadFactor: hashTableRef.current?.loadFactor,
-            operationsCount:hashTableRef.current?.operationsCount,
-          },
+            operationsCount: hashTableRef.current?.operationsCount,
+          }),
         };
-        case "cpu-scheduling":
+      case "cpu-scheduling":
         return {
           type: "cpu-scheduling",
-          cpuState: cpuStateRef.current,
+          cpuState: serializeState(cpuStateRef.current),
         };
-        case "tcp-handshake":
+      case "tcp-handshake":
         return {
           type: "tcp-handshake",
-          state: tcpRef.current?.getState(),
+          state: serializeState(tcpRef.current?.getState?.() ?? tcpRef.current),
         };
       default:
         return {};

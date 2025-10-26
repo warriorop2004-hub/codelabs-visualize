@@ -14,11 +14,12 @@ type Submission = {
   answers: Array<{ question_id: string; answer: string }>;
   experiment_state?: any;
   status: string;
-  grade: string;
+  grade: number | string;
   feedback?: string;
   submitted_at?: string;
   graded_at?: string;
   student?: any;
+  files?: Array<{ url: string; name: string; type?: string }>;
 };
 
 const SubmissionView = () => {
@@ -88,38 +89,58 @@ const SubmissionView = () => {
             )}
 
             {!loading &&
-              submissions.map((s) => (
-                <div key={s.id} className="p-4 rounded-lg border bg-card flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-                  <div>
-                    <h3 className="font-semibold">{s.student?.full_name ?? s.user_id ?? "Unknown Student"}</h3>
-                    <p className="text-sm text-muted-foreground">
-                      Submitted: {s.submitted_at ?? "—"}
-                    </p>
-                    {typeof s.grade === "number" && (
-                      <p className="text-sm text-muted-foreground">Score: {s.grade}</p>
-                    )}
-                    {s.feedback && <p className="text-sm mt-1">{s.feedback}</p>}
-                  </div>
+              submissions.map((s) => {
+                const pdfFile = s.files?.find(
+                  (f) =>
+                    f.type === "application/pdf" ||
+                    (f.name && f.name.toLowerCase().endsWith(".pdf"))
+                );
+                const otherFiles = s.files?.filter((f) => f !== pdfFile) ?? [];
 
-                  <div className="flex items-center gap-2">
-                    {s.files && s.files.length > 0 ? (
-                      s.files.map((f) => (
-                        <a
-                          key={f.url}
-                          href={f.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-2"
-                        >
-                          <Button size="sm" variant="ghost">{f.name}</Button>
-                        </a>
-                      ))
-                    ) : (
-                      <Badge variant="secondary">No files</Badge>
-                    )}
+                return (
+                  <div key={s.id} className="p-4 rounded-lg border bg-card flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                    <div>
+                      <h3 className="font-semibold">{s.student?.full_name ?? s.user_id ?? "Unknown Student"}</h3>
+                      <p className="text-sm text-muted-foreground">
+                        Submitted: {s.submitted_at ?? "—"}
+                      </p>
+                      {typeof s.grade === "number" && (
+                        <p className="text-sm text-muted-foreground">Score: {s.grade}</p>
+                      )}
+                      {s.feedback && <p className="text-sm mt-1">{s.feedback}</p>}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {pdfFile ? (
+                        <>
+                          <a href={pdfFile.url} target="_blank" rel="noopener noreferrer">
+                            <Button size="sm" variant="ghost">View PDF</Button>
+                          </a>
+                          {otherFiles.map((f) => (
+                            <a key={f.url} href={f.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-2">
+                              <Button size="sm" variant="ghost">{f.name}</Button>
+                            </a>
+                          ))}
+                        </>
+                      ) : s.files && s.files.length > 0 ? (
+                        s.files.map((f) => (
+                          <a
+                            key={f.url}
+                            href={f.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-2"
+                          >
+                            <Button size="sm" variant="ghost">{f.name}</Button>
+                          </a>
+                        ))
+                      ) : (
+                        <Badge variant="secondary">No files</Badge>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
           </CardContent>
         </Card>
       </div>

@@ -22,6 +22,29 @@ router.get('/', async (req, res) => {
   res.json(data);
 });
 
+// Get enrolled courses for user
+router.get('/enrolled', async (req, res) => {
+  const userId = (req as any).user.id;
+  console.log("Fetching enrolled courses for user:", userId);
+  const { data, error } = await supabase
+    .from('course_enrollments')
+    .select(`
+      course:courses (
+        *,
+        instructor:instructor_id (
+          id,
+          full_name
+        )
+      )
+    `)
+    .eq('user_id', userId);
+  if (error) {
+    return res.status(500).json({ error: error.message });
+  }
+
+  res.json(data?.map(d => d.course) || []);
+});
+
 router.get('/:id', async (req, res) => {
   const { id } = req.params;
 
@@ -104,30 +127,6 @@ router.get('/:courseId/experiment/:experimentId/submissions', async (req, res) =
   }
 
   res.json(data);
-});
-
-// Get enrolled courses for user
-router.get('/enrolled', async (req, res) => {
-  const userId = (req as any).user.id;
-
-  const { data, error } = await supabase
-    .from('course_enrollments')
-    .select(`
-      course:courses (
-        *,
-        instructor:instructor_id (
-          id,
-          full_name
-        )
-      )
-    `)
-    .eq('user_id', userId);
-
-  if (error) {
-    return res.status(500).json({ error: error.message });
-  }
-
-  res.json(data?.map(d => d.course) || []);
 });
 
 // Enroll in a course
