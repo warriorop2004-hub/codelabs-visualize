@@ -30,6 +30,24 @@ router.get("/slug/:slug", async (req, res) => {
   res.json(data);
 });
 
+router.post("/grade/:submissionId", async (req, res) => {
+  try {
+    const { submissionId } = req.params;
+    const { score, feedback } = req.body;
+    const { data, error } = await supabase
+      .from("submissions")
+      .update({ grade: score, feedback, graded_at: new Date() })
+      .eq("id", submissionId);
+
+    if (error) {
+      throw error;
+    } 
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: "Failed to grade submission" });
+  }
+});
+
 // router.post("/generatePdf", async (req, res) => {
 //   try {
 //     const { answers, experimentState, meta } = req.body;

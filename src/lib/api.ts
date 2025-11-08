@@ -22,6 +22,7 @@ export const experimentApi = {
   getAll: () => api.get('/experiments'),
   submit: (id: string, data: any) => api.post(`/experiments/submit/${id}`, data),
   getExperimentBySlug: (slug: string) => api.get(`/experiments/slug/${slug}`),
+  gradeSubmission: (submissionId: string, data: any) => api.post(`/experiments/grade/${submissionId}`, data),
 };
 
 export const userApi = {

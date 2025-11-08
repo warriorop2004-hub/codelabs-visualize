@@ -1,69 +1,51 @@
-import PDFDocument from 'pdfkit';
-import { supabase } from '../index';
+import { Lambda } from "aws-sdk";
+import { supabase } from "../index";
 
 export class PdfService {
   static async generateSubmissionPdf(data: {
-    answers: any,
-    experimentState: any,
-    meta: any
+    answers: any;
+    experimentState: any;
+    meta: any;
   }): Promise<Buffer> {
-    return new Promise((resolve, reject) => {
-      const doc = new PDFDocument();
-      const chunks: Buffer[] = [];
-
-      doc.on('data', chunk => chunks.push(chunk));
-      doc.on('end', () => resolve(Buffer.concat(chunks)));
-
-      // Add content to PDF
-      doc.fontSize(20).text('Experiment Submission', { align: 'center' });
-      doc.moveDown();
-
-      doc.fontSize(16).text(`Experiment Title: ${data.meta.metadata.title}`);
-      doc.fontSize(16).text('Student Information');
-      doc.fontSize(12).text(`Name: ${data.meta.student.name}`);
-      doc.moveDown();
-
-      // Experiment Instructions
-      doc.fontSize(16).text('Experiment Objectives');
-      data.meta.metadata.objectives.forEach((obj: any, index: number) => {
-        doc.fontSize(12).text(`${index+1} : ${obj}`);
-        doc.moveDown();
-      });
-      doc.moveDown();
-
-      // Task Description
-      doc.fontSize(16).text('Tasks');
-      data.meta.metadata.tasks.forEach((task: any, index: number) => {
-        doc.fontSize(12).text(`${index+1} : ${task}`);
-        doc.moveDown();
-      });
-      doc.moveDown();
-
-      // Post Experiment Questions & Answers
-      doc.fontSize(16).text('Post Experiment Questions & Answers');
-      data.answers.forEach((qa: any, index: number) => {
-        doc.fontSize(12).text(`Q${index + 1}: ${qa.questionText}`);
-        doc.fontSize(12).text(`A: ${qa.answerText}`);
-        doc.moveDown();
-      });
-
-      // Experiment State
-      doc.fontSize(16).text('Experiment State');
-      doc.fontSize(12).text(JSON.stringify(data.experimentState, null, 2));
-
-      doc.end();
+    // console.log("AWS Region:", process.env.AWS_REGION);
+    const lambda = new Lambda({
+      region: process.env.AWS_REGION,
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID!,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY!,
+      },
     });
+    // console.log(lambda);
+    const params = {
+      FunctionName: process.env.PDF_LAMBDA_FUNCTION_NAME!,
+      Payload: JSON.stringify({
+        body: JSON.stringify(data),
+      }),
+    };
+
+    const result = await lambda.invoke(params).promise();
+    const response = JSON.parse(result.Payload as string);
+
+    if (response.statusCode !== 200) {
+      throw new Error("PDF generation failed");
+    }
+
+    return Buffer.from(response.body, "base64");
   }
 
-  static async saveSubmission(studentId: string, experimentId: string, pdfBuffer: Buffer): Promise<string> {
+  static async saveSubmission(
+    studentId: string,
+    experimentId: string,
+    pdfBuffer: Buffer
+  ): Promise<string> {
     const filename = `${studentId}_${experimentId}_${Date.now()}.pdf`;
-    
+
     // Upload to Supabase storage
     const { data, error } = await supabase.storage
-      .from('experiment-submissions')
+      .from("experiment-submissions")
       .upload(filename, pdfBuffer, {
-        contentType: 'application/pdf',
-        cacheControl: '3600'
+        contentType: "application/pdf",
+        cacheControl: "3600",
       });
 
     if (error) {
@@ -71,9 +53,9 @@ export class PdfService {
     }
 
     // Get public URL
-    const { data: { publicUrl } } = supabase.storage
-      .from('experiment-submissions')
-      .getPublicUrl(filename);
+    const {
+      data: { publicUrl },
+    } = supabase.storage.from("experiment-submissions").getPublicUrl(filename);
 
     return publicUrl;
   }
@@ -81,7 +63,7 @@ export class PdfService {
   static async getSubmission(pdfUrl: string): Promise<Buffer> {
     const response = await fetch(pdfUrl);
     if (!response.ok) {
-      throw new Error('Failed to fetch PDF');
+      throw new Error("Failed to fetch PDF");
     }
     return Buffer.from(await response.arrayBuffer());
   }

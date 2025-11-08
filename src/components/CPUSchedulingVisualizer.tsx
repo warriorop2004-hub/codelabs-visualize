@@ -39,6 +39,9 @@ export interface CPUSchedulingState {
   throughput: number | null; // processes per unit time
   cpuUtilization: number | null; // 0..1
   totalTime: number;
+  // experiment logs
+  logs: string[]; // <-- added: expose raw logs
+  getLogs?: () => string[] | null; // <-- added: helper to get a copy of logs
   // helpers to obtain serializable DOM info on demand (do NOT include DOM nodes directly)
   getTimelineRect?: () => { x: number; y: number; width: number; height: number; top: number; left: number; right: number; bottom: number } | null;
   getTimelineHTML?: () => string | null;
@@ -158,12 +161,15 @@ export const CPUSchedulingVisualizer = forwardRef<CPUSchedulingState>((props, re
 
   const calculateMetrics = (procs: Process[], timeline: TimelineEntry[]) => {
     addLog("\n📊 Performance Metrics:");
-    
+
     procs.forEach((process) => {
-      const completionTime = timeline.filter((t) => t.process === process.name).length + process.arrivalTime;
-      const turnaroundTime = completionTime - process.arrivalTime;
-      const waitingTime = turnaroundTime - process.burstTime;
-      
+      // Find the first time this process is scheduled
+      const startTime = timeline.find((t) => t.process === process.name)?.time ?? process.arrivalTime;
+      // Find the last time this process is scheduled
+      const endTime = Math.max(...timeline.filter((t) => t.process === process.name).map(t => t.time), process.arrivalTime) + 1;
+      const turnaroundTime = endTime - process.arrivalTime;
+      const waitingTime = startTime - process.arrivalTime;
+
       addLog(`${process.name}: Waiting Time = ${waitingTime}, Turnaround Time = ${turnaroundTime}`);
     });
   };
@@ -275,13 +281,16 @@ export const CPUSchedulingVisualizer = forwardRef<CPUSchedulingState>((props, re
       throughput: metrics.throughput,
       cpuUtilization: metrics.cpuUtilization,
       totalTime: metrics.totalTime,
+      // experiment logs
+      logs: log, // expose current logs
+      getLogs: () => log.slice(), // return a copy to keep immutability
       // expose only helpers that produce serializable outputs on demand
       getTimelineRect,
       getTimelineHTML,
       startScheduling,
       reset,
     } as CPUSchedulingState;
-  }, [processes, timeline, algorithm, currentTime, isRunning]);
+  }, [processes, timeline, algorithm, currentTime, isRunning, log]); // include log in deps
 
   return (
     <div className="space-y-6">

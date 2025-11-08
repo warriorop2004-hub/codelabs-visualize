@@ -25,7 +25,6 @@ router.get('/', async (req, res) => {
 // Get enrolled courses for user
 router.get('/enrolled', async (req, res) => {
   const userId = (req as any).user.id;
-  console.log("Fetching enrolled courses for user:", userId);
   const { data, error } = await supabase
     .from('course_enrollments')
     .select(`
@@ -114,7 +113,7 @@ router.get('/:courseId/experiment/:experimentId/submissions', async (req, res) =
   const { data, error } = await supabase
     .from('submissions')
     .select(`
-      *,
+      id,experiment_id,user_id,status,grade,feedback,submitted_at,graded_at,pdf_url,
       student : user_id (
         id,
         full_name

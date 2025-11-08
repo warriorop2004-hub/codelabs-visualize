@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, forwardRef } from "react";
+import { useState, useRef, useEffect, forwardRef, useImperativeHandle } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,18 +14,37 @@ interface TreeNode {
   y?: number;
 }
 
-export const BSTVisualizer = forwardRef<SVGSVGElement>((props,ref) => {
+export interface BSTState {
+  // Serializable snapshot of the tree (no circular refs)
+  tree: { value: number; left: any | null; right: any | null } | null;
+  logs: string[];
+  nodeCount: number;
+  depth: number;
+  pan: { x: number; y: number };
+  zoom: number;
+  highlighted: number[]; // list of highlighted node values
+  getLogs: () => string[]; // returns a copy
+  getTreeSnapshot: () => any | null; // serializable snapshot
+  getSVGHTML?: () => string | null;
+  getSVGBoundingRect?: () => { x: number; y: number; width: number; height: number; top: number; left: number; right: number; bottom: number } | null;
+  reset: () => void;
+}
+
+export const BSTVisualizer = forwardRef<BSTState>((props, ref) => {
   const [tree, setTree] = useState<TreeNode | null>(null);
   const [inputValue, setInputValue] = useState("");
   const [animationSpeed, setAnimationSpeed] = useState([50]);
   const [searchValue, setSearchValue] = useState("");
   const [deleteValue, setDeleteValue] = useState("");
-  const [highlightedNodes, setHighlightedNodes] = useState<Set<number>>(new Set());
   const [log, setLog] = useState<string[]>([]);
   const [pan, setPan] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
+  const [highlightedNodes, setHighlightedNodes] = useState<Set<number>>(new Set());
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+
+  // new: internal svg ref (do not expose DOM node directly in state)
+  const svgRef = useRef<SVGSVGElement | null>(null);
 
   const addLog = (message: string) => {
     setLog((prev) => [...prev, message]);
@@ -219,6 +238,64 @@ export const BSTVisualizer = forwardRef<SVGSVGElement>((props,ref) => {
     return newNode;
   };
 
+  // helpers for exported state
+  const serializeTree = (node: TreeNode | null): any | null => {
+    if (!node) return null;
+    return {
+      value: node.value,
+      left: serializeTree(node.left),
+      right: serializeTree(node.right),
+    };
+  };
+
+  const computeNodeCount = (node: TreeNode | null): number => {
+    if (!node) return 0;
+    return 1 + computeNodeCount(node.left) + computeNodeCount(node.right);
+  };
+
+  const computeDepth = (node: TreeNode | null): number => {
+    if (!node) return 0;
+    return 1 + Math.max(computeDepth(node.left), computeDepth(node.right));
+  };
+
+  const getSVGHTML = () => {
+    const el = svgRef.current;
+    if (!el) return null;
+    return el.outerHTML;
+  };
+
+  const getSVGBoundingRect = () => {
+    const el = svgRef.current;
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return {
+      x: r.x,
+      y: r.y,
+      width: r.width,
+      height: r.height,
+      top: r.top,
+      left: r.left,
+      right: r.right,
+      bottom: r.bottom,
+    };
+  };
+
+  // expose imperative state
+  useImperativeHandle(ref, () => ({
+    tree: serializeTree(tree),
+    logs: log,
+    nodeCount: computeNodeCount(tree),
+    depth: computeDepth(tree),
+    pan,
+    zoom,
+    highlighted: Array.from(highlightedNodes),
+    getLogs: () => log.slice(),
+    getTreeSnapshot: () => serializeTree(tree),
+    getSVGHTML,
+    getSVGBoundingRect,
+    reset: handleReset,
+  }), [tree, log, pan, zoom, highlightedNodes]);
+
   const renderTree = () => {
     if (!tree) return null;
 
@@ -306,7 +383,7 @@ export const BSTVisualizer = forwardRef<SVGSVGElement>((props,ref) => {
 
     return (
       <svg
-        ref={ref}
+        ref={svgRef}
         width="100%"
         height="500"
         className="bg-card rounded-lg border shadow-sm cursor-move touch-none"

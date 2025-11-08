@@ -1,9 +1,10 @@
-import { useState, forwardRef, useImperativeHandle, useRef } from "react";
+import { useState, forwardRef, useImperativeHandle, useRef, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Plus, Trash2, Search, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
+import { table } from "console";
 
 interface HashEntry {
   key: string;
@@ -21,11 +22,16 @@ export interface HashTableState {
     collisions: number;
   };
   hashFunction: (key: string) => number;
+  logs: string[]; // <-- added: expose logs
+  getLogs?: () => string[] | null; // <-- added: helper to get a copy of logs
 }
 
 export const HashTableVisualizer = forwardRef<HashTableState>((props, ref) => {
+  let loadFactor = 0;
   const [tableSize] = useState(10);
-  const [hashTable, setHashTable] = useState<(HashEntry | null)[]>(Array(10).fill(null));
+  const [hashTable, setHashTable] = useState<(HashEntry | null)[]>(
+    Array(10).fill(null)
+  );
   const [inputKey, setInputKey] = useState("");
   const [inputValue, setInputValue] = useState("");
   const [searchKey, setSearchKey] = useState("");
@@ -38,25 +44,31 @@ export const HashTableVisualizer = forwardRef<HashTableState>((props, ref) => {
     collisions: 0,
   });
 
-  const addLog = (message: string) => {
+  const addLog = useCallback((message: string) => {
     setLog((prev) => [...prev, message]);
-  };
+  },[]);
 
-  const hashFunction = (key: string): number => {
+  const hashFunction = useCallback((key: string): number => {
     let hash = 0;
     for (let i = 0; i < key.length; i++) {
       hash = (hash + key.charCodeAt(i) * (i + 1)) % tableSize;
     }
     addLog(`Hash("${key}") = ${hash}`);
     return hash;
-  };
+  },[tableSize, addLog]);
 
-  useImperativeHandle(ref, () => ({
-    table: hashTable,
-    loadFactor,
-    operationsCount,
-    hashFunction,
-  }));
+  useImperativeHandle(
+    ref,
+    () => ({
+      table: hashTable,
+      loadFactor,
+      operationsCount,
+      hashFunction,
+      logs: log,
+      getLogs: () => log.slice(),
+    }),
+    [hashTable, loadFactor, operationsCount, hashFunction, log]
+  );
 
   const handleInsert = () => {
     if (!inputKey.trim() || !inputValue.trim()) {
@@ -73,7 +85,7 @@ export const HashTableVisualizer = forwardRef<HashTableState>((props, ref) => {
       probeCount++;
       addLog(`⚠️ Collision at index ${index}, probing...`);
       index = (index + 1) % tableSize;
-      
+
       if (probeCount >= tableSize) {
         toast.error("Hash table is full!");
         addLog("❌ Table is full, cannot insert");
@@ -84,24 +96,24 @@ export const HashTableVisualizer = forwardRef<HashTableState>((props, ref) => {
     const newTable = [...hashTable];
     newTable[index] = { key: inputKey, value: inputValue, index };
     setHashTable(newTable);
-    
+
     setHighlightedIndex(index);
     setTimeout(() => setHighlightedIndex(null), 2000);
 
     if (probeCount > 0) {
-      setOperationsCount(prev => ({
+      setOperationsCount((prev) => ({
         ...prev,
         collisions: prev.collisions + 1,
       }));
     }
-    setOperationsCount(prev => ({
+    setOperationsCount((prev) => ({
       ...prev,
       insertions: prev.insertions + 1,
     }));
 
     addLog(`✅ Inserted "${inputKey}": "${inputValue}" at index ${index}`);
     toast.success(`Inserted at index ${index}`);
-    
+
     setInputKey("");
     setInputValue("");
   };
@@ -122,7 +134,7 @@ export const HashTableVisualizer = forwardRef<HashTableState>((props, ref) => {
         setTimeout(() => setHighlightedIndex(null), 3000);
         addLog(`✅ Found "${searchKey}" at index ${index}`);
         toast.success(`Found at index ${index}!`);
-        setOperationsCount(prev => ({
+        setOperationsCount((prev) => ({
           ...prev,
           searches: prev.searches + 1,
         }));
@@ -150,7 +162,7 @@ export const HashTableVisualizer = forwardRef<HashTableState>((props, ref) => {
       setHashTable(newTable);
       addLog(`🗑️ Deleted key "${key}" from index ${index}`);
       toast.success("Entry deleted");
-      setOperationsCount(prev => ({
+      setOperationsCount((prev) => ({
         ...prev,
         deletions: prev.deletions + 1,
       }));
@@ -173,7 +185,7 @@ export const HashTableVisualizer = forwardRef<HashTableState>((props, ref) => {
     toast.success("Hash table cleared");
   };
 
-  const loadFactor = hashTable.filter((entry) => entry !== null).length / tableSize;
+  loadFactor = hashTable.filter((entry) => entry !== null).length / tableSize;
 
   return (
     <div className="space-y-6">
@@ -183,7 +195,10 @@ export const HashTableVisualizer = forwardRef<HashTableState>((props, ref) => {
             <span>Hash Table Visualization</span>
             <div className="flex items-center gap-4">
               <div className="text-sm text-muted-foreground">
-                Load Factor: <span className="font-bold text-foreground">{(loadFactor * 100).toFixed(1)}%</span>
+                Load Factor:{" "}
+                <span className="font-bold text-foreground">
+                  {(loadFactor * 100).toFixed(1)}%
+                </span>
               </div>
               <Button variant="outline" size="sm" onClick={reset}>
                 <RotateCcw className="h-4 w-4" />
@@ -208,12 +223,14 @@ export const HashTableVisualizer = forwardRef<HashTableState>((props, ref) => {
                 <div className="w-12 text-center font-bold text-sm text-muted-foreground">
                   [{index}]
                 </div>
-                
+
                 {entry ? (
                   <>
                     <div className="flex-1 flex items-center gap-4">
                       <div className="flex-1">
-                        <span className="font-semibold text-primary">{entry.key}</span>
+                        <span className="font-semibold text-primary">
+                          {entry.key}
+                        </span>
                         <span className="mx-2 text-muted-foreground">→</span>
                         <span className="text-foreground">{entry.value}</span>
                       </div>
@@ -228,7 +245,9 @@ export const HashTableVisualizer = forwardRef<HashTableState>((props, ref) => {
                     </div>
                   </>
                 ) : (
-                  <div className="flex-1 text-muted-foreground text-sm italic">Empty slot</div>
+                  <div className="flex-1 text-muted-foreground text-sm italic">
+                    Empty slot
+                  </div>
                 )}
               </div>
             ))}
@@ -285,13 +304,18 @@ export const HashTableVisualizer = forwardRef<HashTableState>((props, ref) => {
         </CardHeader>
         <CardContent className="space-y-2 text-sm">
           <p className="text-muted-foreground">
-            <span className="font-semibold text-foreground">Method:</span> Custom hash with linear probing
+            <span className="font-semibold text-foreground">Method:</span>{" "}
+            Custom hash with linear probing
           </p>
           <p className="text-muted-foreground">
-            <span className="font-semibold text-foreground">Collision Resolution:</span> Linear probing (checks next slot)
+            <span className="font-semibold text-foreground">
+              Collision Resolution:
+            </span>{" "}
+            Linear probing (checks next slot)
           </p>
           <p className="text-muted-foreground">
-            <span className="font-semibold text-foreground">Table Size:</span> {tableSize} slots
+            <span className="font-semibold text-foreground">Table Size:</span>{" "}
+            {tableSize} slots
           </p>
         </CardContent>
       </Card>
@@ -303,7 +327,9 @@ export const HashTableVisualizer = forwardRef<HashTableState>((props, ref) => {
         <CardContent>
           <div className="bg-muted/50 rounded-lg p-4 max-h-[200px] overflow-y-auto font-mono text-xs space-y-1">
             {log.length === 0 ? (
-              <p className="text-muted-foreground">Operations will appear here...</p>
+              <p className="text-muted-foreground">
+                Operations will appear here...
+              </p>
             ) : (
               log.slice(-15).map((entry, index) => (
                 <div key={index} className="text-foreground/80">

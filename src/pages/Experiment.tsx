@@ -1,7 +1,7 @@
 import { useState, useEffect , useRef} from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Navbar } from "@/components/Navbar";
-import { BSTVisualizer } from "@/components/BSTVisualizer";
+import { BSTState, BSTVisualizer } from "@/components/BSTVisualizer";
 import { SortingVisualizer, SortingVisualizerHandle } from "@/components/SortingVisualizer";
 import { TCPVisualizer, TCPVisualizerHandle } from "@/components/TCPVisualizer";
 import { CPUSchedulingState, CPUSchedulingVisualizer } from "@/components/CPUSchedulingVisualizer";
@@ -21,120 +21,16 @@ import { experimentApi } from "@/lib/api";
 import { useAuth } from "@/contexts/AuthContext";
 import { sub } from "date-fns";
 
-const experimentData = {
-  bst: {
-    title: "Binary Search Tree Visualizer",
-    course: "CS201: Data Structures",
-    objectives: [
-      "Understand BST structure",
-      "Master insertion operations",
-      "Learn search algorithms",
-      "Practice deletion cases",
-    ],
-    tasks: [
-      "Insert nodes: 50, 30, 70, 20, 45, 60, 80",
-      "Search for node with value 45",
-      "Delete node 30 and observe restructuring",
-      "Analyze the time complexity",
-    ],
-    questions: [
-      "What is the time complexity of BST insertion in the average case?",
-      "Explain the node deletion process when the node has two children.",
-    ],
-  },
-  sorting: {
-    title: "Sorting Algorithms Visualizer",
-    course: "CS301: Algorithms",
-    objectives: [
-      "Compare different sorting algorithms",
-      "Understand time complexity differences",
-      "Observe algorithm behavior on various inputs",
-      "Identify best and worst case scenarios",
-    ],
-    tasks: [
-      "Run Bubble Sort and observe the number of comparisons",
-      "Compare Bubble Sort with Quick Sort performance",
-      "Test with already sorted and reverse sorted arrays",
-      "Analyze space complexity of each algorithm",
-    ],
-    questions: [
-      "Which algorithm performs best on nearly sorted data?",
-      "Explain why Quick Sort is generally faster than Bubble Sort.",
-    ],
-  },
-  "tcp-handshake": {
-    title: "TCP Three-Way Handshake",
-    course: "CS305: Computer Networks",
-    objectives: [
-      "Understand TCP connection establishment",
-      "Learn the purpose of each handshake step",
-      "Identify sequence and acknowledgment numbers",
-      "Recognize connection states",
-    ],
-    tasks: [
-      "Run the handshake simulation",
-      "Observe the SYN, SYN-ACK, ACK sequence",
-      "Note the sequence and acknowledgment numbers",
-      "Identify when the connection is established",
-    ],
-    questions: [
-      "Why does TCP use a three-way handshake instead of two-way?",
-      "What happens if the ACK packet is lost?",
-    ],
-  },
-  "cpu-scheduling": {
-    title: "CPU Scheduling Simulator",
-    course: "CS302: Operating Systems",
-    objectives: [
-      "Compare different scheduling algorithms",
-      "Calculate waiting and turnaround times",
-      "Understand context switching overhead",
-      "Analyze algorithm fairness",
-    ],
-    tasks: [
-      "Run FCFS and observe the execution order",
-      "Compare with SJF and Round Robin",
-      "Calculate average waiting time for each",
-      "Identify which algorithm minimizes waiting time",
-    ],
-    questions: [
-      "Which algorithm can lead to starvation?",
-      "Explain the trade-offs of Round Robin scheduling.",
-    ],
-  },
-  "hash-tables": {
-    title: "Hash Table Operations",
-    course: "CS201: Data Structures",
-    objectives: [
-      "Understand hash function behavior",
-      "Learn collision resolution techniques",
-      "Observe load factor effects",
-      "Practice search, insert, delete operations",
-    ],
-    tasks: [
-      "Insert multiple key-value pairs",
-      "Observe collision resolution with linear probing",
-      "Search for existing and non-existing keys",
-      "Monitor load factor as table fills",
-    ],
-    questions: [
-      "What is the average time complexity for hash table operations?",
-      "Explain how linear probing resolves collisions.",
-    ],
-  },
-};
-
 const Experiment = () => {
   const { slug } = useParams<{ slug: string }>();
-  const svgRef = useRef<SVGSVGElement | null>(null);
+  const bstRef = useRef<BSTState>(null);
   const hashTableRef = useRef<HashTableState>(null);
   const cpuStateRef = useRef<CPUSchedulingState>(null);
   const sortingRef = useRef<SortingVisualizerHandle>(null);
   const tcpRef = useRef<TCPVisualizerHandle>(null);
   const [experimentInfo, setExperimentInfo] = useState<any>(null);
-  const experiment = experimentData[slug as keyof typeof experimentData];
   const [submissionText, setSubmissionText] = useState<string[]>(
-    Array(experiment?.questions.length).fill("")
+    Array(experimentInfo?.questions.length).fill("")
   );
 
   useEffect(() => {
@@ -162,7 +58,7 @@ const Experiment = () => {
 
   if (!profile || profile.role !== "student") return null;
 
-  if (!experiment) {
+  if (!experimentInfo) {
     return (
       <div className="min-h-screen bg-background">
         <Navbar />
@@ -210,11 +106,11 @@ const Experiment = () => {
     // include canonical experiment metadata (instructions, tasks, questions) if available from server
     const metadata = {
       experimentId: id,
-      title: experimentInfo?.title ?? experiment?.title,
-      course: experimentInfo?.course ?? experiment?.course,
-      objectives: experimentInfo?.objectives ?? experiment?.objectives,
-      tasks: experimentInfo?.tasks ?? experiment?.tasks,
-      questions: experimentInfo?.questions ?? experiment?.questions,
+      title: experimentInfo?.title,
+      course: experimentInfo?.course,
+      objectives: experimentInfo?.objectives,
+      tasks: experimentInfo?.tasks,
+      questions: experimentInfo?.questions,
     };
 
     const snapshot = serializeState(rawExperimentState);
@@ -253,7 +149,7 @@ const Experiment = () => {
       await experimentApi.submit(id!, documentPayload);
 
       toast.success("Lab report submitted successfully!");
-      setSubmissionText(Array(experiment.questions.length).fill(""));
+      setSubmissionText(Array(experimentInfo.questions.length).fill(""));
     } catch (error) {
       toast.error("Failed to submit lab report");
       console.error(error);
@@ -266,8 +162,13 @@ const Experiment = () => {
       case "bst":
         return {
           type: "bst",
-          // DOM snapshot - serializable string
-          snapshot: svgRef.current?.outerHTML ?? null,
+          tree: bstRef.current?.getTreeSnapshot?.() ?? null,
+          logs: bstRef.current?.logs ?? [],
+          nodeCount: bstRef.current?.nodeCount ?? 0,
+          depth: bstRef.current?.depth,
+          pan: bstRef.current?.pan,
+          zoom: bstRef.current?.zoom,
+          highlighted: bstRef.current?.highlighted|| [],
         };
       case "sorting":
         return {
@@ -281,6 +182,7 @@ const Experiment = () => {
             table: hashTableRef.current?.table,
             loadFactor: hashTableRef.current?.loadFactor,
             operationsCount: hashTableRef.current?.operationsCount,
+            logs: hashTableRef.current?.logs,
           }),
         };
       case "cpu-scheduling":
@@ -301,7 +203,7 @@ const Experiment = () => {
   const renderVisualizer = () => {
     switch (slug) {
       case "bst":
-        return <BSTVisualizer ref={svgRef} />;
+        return <BSTVisualizer ref={bstRef} />;
       case "sorting":
         return <SortingVisualizer ref={sortingRef}/>;
       case "tcp-handshake":
@@ -311,7 +213,7 @@ const Experiment = () => {
       case "hash-tables":
         return <HashTableVisualizer ref={hashTableRef} />;
       default:
-        return <BSTVisualizer ref={svgRef}/>;
+        return <BSTVisualizer ref={bstRef}/>;
     }
   };
 
@@ -321,8 +223,8 @@ const Experiment = () => {
 
       <div className="container mx-auto px-4 py-6">
         <div className="mb-6 animate-fade-in-up">
-          <h1 className="text-3xl font-bold mb-2">{experiment.title}</h1>
-          <p className="text-muted-foreground">{experiment.course}</p>
+          <h1 className="text-3xl font-bold mb-2">{experimentInfo.title}</h1>
+          <p className="text-muted-foreground">{experimentInfo.course}</p>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -339,7 +241,7 @@ const Experiment = () => {
                 <div>
                   <h4 className="font-semibold mb-2">Learning Objectives:</h4>
                   <ul className="list-disc list-inside space-y-1 text-muted-foreground">
-                    {experiment.objectives.map((obj, idx) => (
+                    {experimentInfo.objectives.map((obj, idx) => (
                       <li key={idx}>{obj}</li>
                     ))}
                   </ul>
@@ -348,7 +250,7 @@ const Experiment = () => {
                 <div>
                   <h4 className="font-semibold mb-2">Tasks:</h4>
                   <ol className="list-decimal list-inside space-y-2 text-muted-foreground">
-                    {experiment.tasks.map((task, idx) => (
+                    {experimentInfo.tasks.map((task, idx) => (
                       <li key={idx}>{task}</li>
                     ))}
                   </ol>
@@ -364,7 +266,7 @@ const Experiment = () => {
                   <div className="flex items-center justify-between text-xs text-muted-foreground">
                     <span>Course:</span>
                     <span className="font-semibold text-foreground">
-                      {experiment.course}
+                      {experimentInfo.course}
                     </span>
                   </div>
                 </div>
@@ -391,7 +293,7 @@ const Experiment = () => {
                 <CardDescription>Answer the questions below</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {experiment.questions.map((question, idx) => (
+                {experimentInfo.questions.map((question, idx) => (
                   <div key={idx}>
                     <label className="text-sm font-medium mb-2 block">
                       {idx + 1}. {question}
