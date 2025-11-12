@@ -156,7 +156,7 @@ const Dashboard = () => {
                         </p>
                       </div>
                       <Button variant="ghost" size="sm" asChild>
-                        <Link to={`/course/${course.id}`}>View Course</Link>
+                        <Link to={`/library/${course.name}`}>View Course</Link>
                       </Button>
                     </div>
                     <div className="w-full bg-muted rounded-full h-2">

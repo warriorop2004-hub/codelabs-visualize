@@ -39,4 +39,5 @@ export const courseApi = {
   enroll: (id: string) => api.post(`/courses/${id}/enroll`),
   getProgress: (id: string) => api.get(`/courses/${id}/progress`),
   getSubmissions: (courseId: string, experimentId: string) => api.get(`/courses/${courseId}/experiment/${experimentId}/submissions`),
+  getExperiments: (courseName: string) => api.get(`/courses/experiments/all/${courseName}`),
 };

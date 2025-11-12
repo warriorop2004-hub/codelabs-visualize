@@ -23,17 +23,6 @@ export const Navbar = () => {
             CodeLabs Interactive
           </span>
         </Link>
-
-        <div className="hidden md:flex items-center gap-6">
-          <Link to="/dashboard" className="text-foreground/80 hover:text-primary transition-colors flex items-center gap-2">
-            <BookOpen className="h-4 w-4" />
-            Dashboard
-          </Link>
-          <Link to="/library" className="text-foreground/80 hover:text-primary transition-colors">
-            Experiment Library
-          </Link>
-        </div>
-
         <div className="flex items-center gap-3">
           {!user ? (
             <>

@@ -1,33 +1,32 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { Navbar } from "@/components/Navbar";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Search, Layers, GitBranch, Network, Cpu, Play } from "lucide-react";
-import { experimentApi } from "@/lib/api";
+import { courseApi } from "@/lib/api";
 import { Experiment } from "@/types";
-
-const categories = [
-  { id: "all", name: "All Experiments" },
-  { id: "algorithms", name: "Algorithms" },
-  { id: "data-structures", name: "Data Structures" },
-  { id: "operating-systems", name: "Operating Systems" },
-  { id: "networks", name: "Networks" },
-];
 
 const Library = () => {
   const [experiments, setExperiments] = useState<Experiment[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState("all");
+
+  const { slug } = useParams<{ slug?: string }>();
+  const routeSlug = slug ? decodeURIComponent(slug) : undefined;
 
   useEffect(() => {
     const fetchExperiments = async () => {
       try {
-        const { data } = await experimentApi.getAll();
+        const { data } = await courseApi.getExperiments(routeSlug);
         setExperiments(data);
       } catch (error) {
         console.error("Error fetching experiments:", error);
@@ -38,13 +37,6 @@ const Library = () => {
 
     fetchExperiments();
   }, []);
-
-  const filteredExperiments = experiments.filter((exp) => {
-    const matchesSearch = exp?.title?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      exp?.description?.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCategory = selectedCategory === "all" || exp.category === selectedCategory;
-    return matchesSearch && matchesCategory;
-  });
 
   const getDifficultyColor = (difficulty: string) => {
     switch (difficulty) {
@@ -65,19 +57,32 @@ const Library = () => {
       Layers,
       Network,
       Cpu,
-      Play
+      Play,
     };
     return icons[iconName as keyof typeof icons] || Layers;
+  };
+
+  // Filter experiments by search query
+  const getFilteredExperiments = () => {
+    if (!searchQuery.trim()) return experiments;
+    const query = searchQuery.toLowerCase();
+    return experiments.filter(
+      (exp) =>
+        exp.title?.toLowerCase().includes(query) ||
+        exp.description?.toLowerCase().includes(query)
+    );
   };
 
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-      
+
       <div className="container mx-auto px-4 py-8">
         <div className="mb-8 animate-fade-in-up">
           <h1 className="text-4xl font-bold mb-2">Experiment Library</h1>
-          <p className="text-muted-foreground">Explore interactive CS visualizations and simulations</p>
+          <p className="text-muted-foreground">
+            Explore interactive CS visualizations and simulations
+          </p>
         </div>
 
         {/* Search and Filter */}
@@ -92,21 +97,12 @@ const Library = () => {
                 className="pl-10"
               />
             </div>
-            <Tabs value={selectedCategory} onValueChange={setSelectedCategory} className="w-full md:w-auto">
-              <TabsList className="grid w-full grid-cols-2 md:grid-cols-5">
-                {categories.map((cat) => (
-                  <TabsTrigger key={cat.id} value={cat.id} className="text-xs md:text-sm">
-                    {cat.name}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
           </div>
         </div>
 
         {/* Experiments Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredExperiments.map((experiment, index) => {
+          {getFilteredExperiments().map((experiment, index) => {
             const Icon = getIcon(experiment.icon);
             return (
               <Card
@@ -119,15 +115,24 @@ const Library = () => {
                     <div className="p-3 bg-gradient-hero rounded-lg shadow-md group-hover:shadow-glow transition-all duration-300">
                       <Icon className="h-6 w-6 text-primary-foreground" />
                     </div>
-                    <Badge className={getDifficultyColor(experiment.difficulty)} variant="outline">
+                    <Badge
+                      className={getDifficultyColor(experiment.difficulty)}
+                      variant="outline"
+                    >
                       {experiment.difficulty}
                     </Badge>
                   </div>
                   <CardTitle className="text-lg">{experiment.title}</CardTitle>
-                  <CardDescription className="line-clamp-2">{experiment.description}</CardDescription>
+                  <CardDescription className="line-clamp-2">
+                    {experiment.description}
+                  </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <Button variant="hero" className="w-full group-hover:shadow-md" asChild>
+                  <Button
+                    variant="hero"
+                    className="w-full group-hover:shadow-md"
+                    asChild
+                  >
                     <Link to={`/experiment/${experiment.slug}`}>
                       <Play className="h-4 w-4" />
                       Launch Experiment
@@ -139,10 +144,18 @@ const Library = () => {
           })}
         </div>
 
-        {filteredExperiments.length === 0 && (
+        {getFilteredExperiments().length === 0 && (
           <div className="text-center py-12 animate-fade-in">
-            <p className="text-muted-foreground text-lg">No experiments found matching your criteria</p>
-            <Button variant="outline" className="mt-4" onClick={() => { setSearchQuery(""); setSelectedCategory("all"); }}>
+            <p className="text-muted-foreground text-lg">
+              No experiments found matching your criteria
+            </p>
+            <Button
+              variant="outline"
+              className="mt-4"
+              onClick={() => {
+                setSearchQuery("");
+              }}
+            >
               Clear Filters
             </Button>
           </div>

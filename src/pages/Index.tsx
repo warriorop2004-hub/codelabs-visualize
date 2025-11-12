@@ -84,12 +84,6 @@ const Index = () => {
                   Start Learning
                 </Link>
               </Button>
-              <Button variant="outline" size="lg" asChild>
-                <Link to="/library">
-                  Explore Library
-                  <ArrowRight className="h-5 w-5" />
-                </Link>
-              </Button>
             </div>
           </div>
         </div>
@@ -226,14 +220,14 @@ const Index = () => {
                       <ArrowRight className="h-5 w-5" />
                     </Link>
                   </Button>
-                  <Button 
+                  {/* <Button 
                     variant="outline" 
                     size="lg" 
                     className="bg-transparent border-primary-foreground text-primary-foreground hover:bg-primary-foreground/10"
                     asChild
                   >
                     <Link to="/library">View Demo</Link>
-                  </Button>
+                  </Button> */}
                 </div>
               </div>
             </CardContent>
