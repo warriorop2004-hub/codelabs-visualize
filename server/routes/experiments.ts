@@ -133,4 +133,26 @@ router.get("/submission/:submissionId", async (req, res) => {
   }
 });
 
+router.get("/submissions/:studentId", async (req, res) => {
+  const { studentId } = req.params;
+
+  const { data, error } = await supabase
+    .from("submissions")
+    .select(
+      `
+      id,experiment_id,grade,feedback,submitted_at,pdf_url,
+      experiment_name:experiment_id (
+        title
+      )
+    `
+    )
+    .eq("user_id", studentId);
+
+  if (error) {
+    return res.status(500).json({ error: error.message });
+  }
+
+  res.json(data);
+});
+
 export const experimentsRouter = router;

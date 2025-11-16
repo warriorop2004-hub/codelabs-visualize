@@ -102,41 +102,6 @@ const Dashboard = () => {
                 </CardContent>
               </Card>
             </div>
-
-            {/* Recent Labs */}
-            <Card className="shadow-md animate-fade-in-up">
-              <CardHeader>
-                <CardTitle>Recent Labs</CardTitle>
-                <CardDescription>Continue where you left off</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {recentLabs.map((lab) => (
-                  <div
-                    key={lab.id}
-                    className="flex items-center justify-between p-4 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
-                  >
-                    <div className="flex items-center gap-4">
-                      <div className="p-3 bg-primary/10 rounded-lg">
-                        <Play className="h-5 w-5 text-primary" />
-                      </div>
-                      <div>
-                        <h3 className="font-semibold">{lab.name}</h3>
-                        <p className="text-sm text-muted-foreground">{lab.course}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <Badge variant={lab.status === "in-progress" ? "default" : "secondary"}>
-                        {lab.dueDate}
-                      </Badge>
-                      <Button variant="hero" size="sm" asChild>
-                        <Link to="/experiment/bst">Continue</Link>
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-
             {/* My Courses */}
             <Card className="shadow-md animate-fade-in-up">
               <CardHeader>

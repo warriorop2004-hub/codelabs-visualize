@@ -12,13 +12,17 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Search, Layers, GitBranch, Network, Cpu, Play } from "lucide-react";
-import { courseApi } from "@/lib/api";
+import { courseApi, experimentApi } from "@/lib/api";
 import { Experiment } from "@/types";
+import { toast } from "sonner";
+import { useAuth } from "@/contexts/AuthContext";
 
 const Library = () => {
+  const { user } = useAuth();
   const [experiments, setExperiments] = useState<Experiment[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
+  const [submissions, setSubmissions] = useState<any>([]);
 
   const { slug } = useParams<{ slug?: string }>();
   const routeSlug = slug ? decodeURIComponent(slug) : undefined;
@@ -29,13 +33,33 @@ const Library = () => {
         const { data } = await courseApi.getExperiments(routeSlug);
         setExperiments(data);
       } catch (error) {
-        console.error("Error fetching experiments:", error);
+        toast.error("Error fetching experiments");
       } finally {
         setLoading(false);
       }
     };
 
     fetchExperiments();
+  }, []);
+
+  useEffect(() => {
+    const fetchAll = async () => {
+      try {
+        const allowedExpts: any[] = [];
+        for (const exp of experiments) {
+          allowedExpts.push(exp.id);
+        }
+        const { data } = await experimentApi.getAllSubmissions(user.id);
+        const filteredSubmissions = Array.isArray(data)
+          ? data.filter((sub) => allowedExpts.includes(sub.experiment_id))
+          : [];
+
+        setSubmissions(filteredSubmissions);
+      } catch (error) {
+        toast.error("Error fetching submissions");
+      }
+    };
+    if (user?.id) fetchAll();
   }, []);
 
   const getDifficultyColor = (difficulty: string) => {
@@ -142,6 +166,48 @@ const Library = () => {
               </Card>
             );
           })}
+        </div>
+
+        {/* Submissions Section */}
+        <div className="mt-10">
+          <h2 className="text-2xl font-semibold mb-4">Submissions</h2>
+
+          {submissions.length === 0 && (
+            <p className="text-muted-foreground">
+              No submissions available for this course yet.
+            </p>
+          )}
+
+          {submissions.map((s: any) => (
+            <div
+              key={s.id}
+              className="m-2 p-4 bg-card border rounded-md flex flex-row justify-between items-start"
+            >
+              <div className="flex flex-col gap-1">
+                <div className="text-sm text-muted-foreground">
+                  Experiment: {s.experiment_name.title || "Unknown"}
+                </div>
+                <div className="text-sm">
+                  Grade:{" "}
+                  {s.grade !== null && s.grade !== undefined
+                    ? s.grade
+                    : "Not graded"}
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  Feedback: {s.feedback ? s.feedback : "No feedback"}
+                </div>
+              </div>
+              {s.pdf_url ? (
+                <a href={s.pdf_url} target="_blank" rel="noopener noreferrer">
+                  <Button size="sm" variant="ghost">
+                    View PDF
+                  </Button>
+                </a>
+              ) : (
+                <Badge variant="secondary">No files</Badge>
+              )}
+            </div>
+          ))}
         </div>
 
         {getFilteredExperiments().length === 0 && (
