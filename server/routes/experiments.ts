@@ -41,7 +41,7 @@ router.post("/grade/:submissionId", async (req, res) => {
 
     if (error) {
       throw error;
-    } 
+    }
     res.json(data);
   } catch (error) {
     res.status(500).json({ error: "Failed to grade submission" });
@@ -71,6 +71,48 @@ router.post("/grade/:submissionId", async (req, res) => {
 //   }
 // });
 
+// router.post("/submit/:id", async (req, res) => {
+//   try {
+//     const { id } = req.params;
+//     const { answers, experimentState, meta } = req.body;
+//     const userId = (req as any).user.id;
+
+//     // Generate PDF
+//     const pdfBuffer = await PdfService.generateSubmissionPdf({
+//       answers,
+//       experimentState,
+//       meta,
+//     });
+
+//     // Upload to storage and get URL
+//     const pdfUrl = await PdfService.saveSubmission(
+//       meta.student.id,
+//       meta.metadata.experimentId,
+//       pdfBuffer
+//     );
+
+//     // Save submission with PDF URL
+//     const { data, error } = await supabase.from("submissions").insert([
+//       {
+//         experiment_id: id,
+//         user_id: userId,
+//         answers,
+//         experiment_state: experimentState,
+//         submitted_at: new Date(),
+//         pdf_url: pdfUrl,
+//       },
+//     ]);
+
+//     if (error) {
+//       throw error;
+//     }
+
+//     res.json(data);
+//   } catch (error: any) {
+//     res.status(500).json({ error: error.message });
+//   }
+// });
+
 router.post("/submit/:id", async (req, res) => {
   try {
     const { id } = req.params;
@@ -91,25 +133,82 @@ router.post("/submit/:id", async (req, res) => {
       pdfBuffer
     );
 
-    // Save submission with PDF URL
-    const { data, error } = await supabase.from("submissions").insert([
-      {
-        experiment_id: id,
-        user_id: userId,
-        answers,
-        experiment_state: experimentState,
-        submitted_at: new Date(),
-        pdf_url: pdfUrl,
-      },
-    ]);
+    // 1️⃣ Check if an earlier submission exists
+    const { data: existing, error: existingError } = await supabase
+      .from("submissions")
+      .select("*")
+      .eq("experiment_id", id)
+      .eq("user_id", userId)
+      .single();
 
-    if (error) {
-      throw error;
+    if (existingError && existingError.code !== "PGRST116") {
+      throw existingError;
     }
 
-    res.json(data);
+    // 2️⃣ If exists → delete old PDF
+    if (existing?.pdf_url) {
+      try {
+        const oldUrl = existing.pdf_url;
+
+        // Convert full URL → storage file path
+        // Example:
+        // "https://xyz.supabase.co/storage/v1/object/public/submissions/user123/exp456/file.pdf"
+        const path = oldUrl.split("/object/public/")[1]; // "submissions/user123/exp456/file.pdf"
+
+        const { error: deleteErr } = await supabase.storage
+          .from("submissions") // your bucket name
+          .remove([path.replace("submissions/", "")]);
+
+        if (deleteErr) {
+          console.warn("Could not delete old PDF:", deleteErr);
+        }
+      } catch (err) {
+        console.warn("Error extracting storage path:", err);
+      }
+    }
+
+    let result;
+
+    // 2️⃣ If exists → UPDATE it
+    if (existing) {
+      const { data, error } = await supabase
+        .from("submissions")
+        .update({
+          answers,
+          experiment_state: experimentState,
+          submitted_at: new Date(),
+          pdf_url: pdfUrl,
+        })
+        .eq("id", existing.id)
+        .select();
+
+      if (error) throw error;
+      result = data;
+    }
+
+    // 3️⃣ If does NOT exist → INSERT new
+    else {
+      const { data, error } = await supabase
+        .from("submissions")
+        .insert([
+          {
+            experiment_id: id,
+            user_id: userId,
+            answers,
+            experiment_state: experimentState,
+            submitted_at: new Date(),
+            pdf_url: pdfUrl,
+          },
+        ])
+        .select();
+
+      if (error) throw error;
+      result = data;
+    }
+
+    return res.json(result);
   } catch (error: any) {
-    res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: error.message });
   }
 });
 

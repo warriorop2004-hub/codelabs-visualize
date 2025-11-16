@@ -321,7 +321,7 @@ const Experiment = () => {
                     Submit Lab Report
                   </Button>
                   <p className="text-xs text-muted-foreground text-center">
-                    Experiment snapshot will be automatically attached
+                    Experiment report will be automatically generated and submitted.
                   </p>
                 </div>
               </CardContent>

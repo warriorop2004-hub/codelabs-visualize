@@ -60,7 +60,7 @@ const Library = () => {
       }
     };
     if (user?.id) fetchAll();
-  }, []);
+  }, [user?.id, experiments ]);
 
   const getDifficultyColor = (difficulty: string) => {
     switch (difficulty) {
